@@ -1,0 +1,27 @@
+[package]
+name = "candle"
+version = "0.1.0"
+edition = "2021"
+authors = ["mo khan <mo@mokhan.ca>"]
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+magnus = { version = "0.8.2" }
+rb-sys = { version = "0.9", features = ["stable-api-compiled-fallback"] }
+
+# huggingface/candle: pure-Rust tensor/ML framework. Start CPU-only; add the
+# "cuda"/"metal" candle-core features later once a model is loading end to end.
+candle-core = "0.11"
+candle-nn = "0.11"
+candle-transformers = "0.11"
+tokenizers = { version = "0.23", default-features = false, features = ["onig"] }
+hf-hub = "1.0"
+
+[build-dependencies]
+rb-sys-env = "0.2.2"
+
+[dev-dependencies]
+rb-sys-test-helpers = { version = "0.2.2" }
