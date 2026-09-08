@@ -31,8 +31,15 @@ impl Model {
     /// piece. This is the interesting FFI boundary: Rust owns the generation
     /// loop, Ruby supplies a block, and each token crosses the boundary as
     /// it's produced rather than buffering the whole response.
-    fn generate(&self, ruby: &Ruby, prompt: String, token_cb: Proc) -> Result<(), Error> {
-        if self.path.is_empty() {
+    ///
+    /// `&Ruby` must come before `self` here -- that's the signature
+    /// `RubyMethod2` (what `method!(_, 2)` resolves to for a 2-Ruby-arg
+    /// method that also wants the `&Ruby` handle) actually requires:
+    /// `Fn(&Ruby, RbSelf, T1, T2) -> Res`. A `&self` receiver puts `self`
+    /// first instead, which is why the original shape failed to satisfy
+    /// the trait bound at compile time.
+    fn generate(ruby: &Ruby, rb_self: &Model, prompt: String, token_cb: Proc) -> Result<(), Error> {
+        if rb_self.path.is_empty() {
             return Err(Error::new(
                 ruby.exception_runtime_error(),
                 "Elelem::Candle::Model: no model path configured",
@@ -45,7 +52,7 @@ impl Model {
         // exercised end to end before a real model is wired in.
         let stub = format!(
             "[stub:{} on {}] {}",
-            self.path, self.device, prompt
+            rb_self.path, rb_self.device, prompt
         );
         for word in stub.split_whitespace() {
             token_cb.call::<_, magnus::Value>((format!("{word} "),))?;

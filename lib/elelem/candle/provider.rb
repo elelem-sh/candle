@@ -16,10 +16,14 @@ module Elelem
         prompt = messages.map { |m| "#{m[:role] || m["role"]}: #{m[:content] || m["content"]}" }.join("\n")
 
         content = +""
-        @model.generate(prompt) do |piece|
+        # Model#generate (Rust) takes token_cb as an explicit Proc argument,
+        # not an implicit Ruby block -- magnus's Proc TryConvert impl
+        # converts a positional argument, it doesn't bind an implicit block.
+        token_cb = proc do |piece|
           content << piece
           block&.call(type: "thinking", text: piece)
         end
+        @model.generate(prompt, token_cb)
 
         block&.call(type: "saying", text: content)
         []
