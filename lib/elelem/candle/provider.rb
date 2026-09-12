@@ -10,7 +10,7 @@ module Elelem
         @model = Elelem::Candle::Model.new(model, device)
       end
 
-      def fetch(messages, tools = [], &block)
+      def fetch(messages, _tools = [], &block)
         # TODO: real chat templating + tool-call parsing, mirroring
         # elelem-llama's provider.rb. For now: single-turn text generation.
         prompt = messages.map { |m| "#{m[:role] || m["role"]}: #{m[:content] || m["content"]}" }.join("\n")

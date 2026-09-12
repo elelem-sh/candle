@@ -10,7 +10,9 @@ require_relative "candle/provider"
 Elelem.configure do |config|
   config.provider(:candle) do
     Elelem::Candle::Provider.new(
-      model: ENV.fetch("ELELEM_CANDLE_MODEL") { raise "set ELELEM_CANDLE_MODEL=/path/to/model (safetensors dir or hf repo id)" }
+      model: ENV.fetch("ELELEM_CANDLE_MODEL") do
+        raise "set ELELEM_CANDLE_MODEL=/path/to/model (safetensors dir or hf repo id)"
+      end
     )
   end
 end
