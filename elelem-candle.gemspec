@@ -16,6 +16,7 @@ Gem::Specification.new do |spec|
   spec.metadata["allowed_push_host"] = "https://rubygems.org"
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = spec.homepage
+  spec.metadata["rubygems_mfa_required"] = "true"
 
   gemspec = File.basename(__FILE__)
   spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
@@ -28,6 +29,6 @@ Gem::Specification.new do |spec|
   spec.executables = ["elelem-candle"]
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "elelem", "~> 0.11"
+  spec.add_dependency "elelem", "~> 0.12"
   spec.add_dependency "rb_sys", "~> 0.9"
 end
