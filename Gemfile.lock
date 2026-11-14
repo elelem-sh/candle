@@ -2,7 +2,7 @@ PATH
   remote: .
   specs:
     elelem-candle (0.1.0)
-      elelem (~> 0.12)
+      elelem (>= 0.12, < 1)
       rb_sys (~> 0.9)
 
 GEM

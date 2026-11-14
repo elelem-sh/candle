@@ -29,6 +29,6 @@ Gem::Specification.new do |spec|
   spec.executables = ["elelem-candle"]
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "elelem", "~> 0.12"
+  spec.add_dependency "elelem", ">= 0.12", "< 1"
   spec.add_dependency "rb_sys", "~> 0.9"
 end
