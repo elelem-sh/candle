@@ -1,6 +1,6 @@
 # elelem-candle
 
-An [elelem](https://src.mokhan.ca/elelem/elelem) provider plugin backed by
+An [elelem](https://github.com/elelem-sh/elelem) provider plugin backed by
 [huggingface/candle](https://github.com/huggingface/candle), a pure-Rust
 tensor/ML framework, via a real Ruby native extension (not a spawned
 subprocess).
