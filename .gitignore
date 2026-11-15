@@ -10,3 +10,4 @@
 /ext/elelem/candle/target/
 /lib/elelem/candle/*.so
 *.gem
+Gemfile.lock
