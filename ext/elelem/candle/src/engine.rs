@@ -182,9 +182,22 @@ impl Engine {
         let started = Instant::now();
         let mut logits = None;
         for chunk in tokens[n_reused..].chunks(opts.chunk.max(1)) {
-            check().map_err(Failure::Callback)?;
             let input = Tensor::new(chunk, &self.device)?.unsqueeze(0)?;
-            logits = Some(self.weights.forward(&input, &mut prefill)?);
+            let mut interrupted = None;
+            let out = self
+                .weights
+                .forward(&input, &mut prefill, &mut || match check() {
+                    Ok(()) => false,
+                    Err(e) => {
+                        interrupted = Some(e);
+                        true
+                    }
+                })?;
+            match (out, interrupted) {
+                (Some(out), _) => logits = Some(out),
+                (None, Some(e)) => return Err(Failure::Callback(e)),
+                (None, None) => return Err(anyhow!("prefill stopped without a reason").into()),
+            }
             self.cached.extend_from_slice(chunk);
         }
         let ms_prefill = started.elapsed().as_secs_f64() * 1000.0;
@@ -208,7 +221,10 @@ impl Engine {
                 on_piece(&piece).map_err(Failure::Callback)?;
             }
             let input = Tensor::new(&[next], &self.device)?.unsqueeze(0)?;
-            logits = self.weights.forward(&input, &mut decode)?;
+            logits = self
+                .weights
+                .forward(&input, &mut decode, &mut || false)?
+                .ok_or_else(|| anyhow!("decode stopped without a reason"))?;
             self.cached.push(next);
         }
         if let Some(piece) = stream.flush(&self.tokenizer)? {

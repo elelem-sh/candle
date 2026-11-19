@@ -324,7 +324,12 @@ impl ModelWeights {
         }
     }
 
-    pub fn forward(&mut self, input: &Tensor, p: &mut Profile) -> Result<Tensor> {
+    pub fn forward(
+        &mut self,
+        input: &Tensor,
+        p: &mut Profile,
+        stop: &mut dyn FnMut() -> bool,
+    ) -> Result<Option<Tensor>> {
         let offset = self.len();
         let (b, l) = input.dims2()?;
         if b != 1 {
@@ -332,6 +337,10 @@ impl ModelWeights {
         }
         let mut h = self.embed.forward(input)?;
         for layer in &mut self.layers {
+            if stop() {
+                self.truncate(offset);
+                return Ok(None);
+            }
             h = match layer.forward(&h, offset, p) {
                 Ok(h) => h,
                 Err(e) => {
@@ -344,5 +353,6 @@ impl ModelWeights {
             let h = self.norm.forward(&h.narrow(1, l - 1, 1)?)?;
             self.lm_head.forward(&h)?.squeeze(1)
         })
+        .map(Some)
     }
 }

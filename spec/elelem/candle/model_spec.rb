@@ -63,6 +63,18 @@ RSpec.describe Elelem::Candle::Model, if: ENV.fetch("ELELEM_CANDLE_TEST_MODEL", 
       expect(run(prompt)[1]).to eq(partial)
     end
 
+    it "stops reading a long chunk within a second of an interrupt" do
+      long = model.render(JSON.generate([{ role: "user", content: "#{"word " * 900}\nReply with pong." }]), "[]", false)
+      worker = Thread.new do
+        model.generate(long, options.merge(chunk: 1024), proc {})
+      rescue Interrupt
+        :interrupted
+      end
+      sleep 0.5
+      worker.raise(Interrupt)
+      expect(worker.join(1)&.value).to eq(:interrupted)
+    end
+
     it "matches a fresh run after the block raises" do
       expect { model.generate(prompt, options, proc { raise ArgumentError }) }.to raise_error(ArgumentError)
       partial = run(prompt)[1]
