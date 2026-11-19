@@ -25,6 +25,22 @@ Baseline from `script/bench`, greedy, 32 output tokens, chunk 128:
 
 Decode also slows as the context grows.
 
+After cache reuse (005) and gemm attention, same commands:
+
+| Model | Run | Prompt tokens | Reused | Prefill tok/s | Decode tok/s | First token |
+|---|---|---|---|---|---|---|
+| 0.6B | `--tokens 256` | 255 | 0 | 96.3 | 29.5 | 2.65 s |
+| 0.6B | `--tokens 1800` | 1843 | 0 | 93.1 | 14.7 | 19.80 s |
+| 4B | `--step` turn 1 | 292 | 0 | 14.5 | 5.5 | 20.09 s |
+| 4B | `--step` turn 2 | 662 | 288 | 15.0 | 4.5 | 24.88 s |
+
+`script/bench --profile` showed attention at 75% of prefill on 0.6B at
+1843 tokens. Reading it with two gemm calls per KV head straight from the
+cache brought it to 17%; quantized matmuls are now most of prefill.
+candle's own decode kernel stayed faster than a hand-written one, so
+decode keeps it. Decode attention is bound by memory bandwidth on the f32
+KV cache, so decode still slows as the context grows.
+
 Ctrl-C is checked between prompt chunks of 128 tokens, so on the 4B model it
 can take several seconds to stop.
 
@@ -36,10 +52,13 @@ can take several seconds to stop.
 
 # Tasks
 
-* [ ] TBD (filled in design mode)
+* [x] `script/bench` with `--profile` section timers
+* [x] gemm attention for prefill, reading the KV cache in place
+* [x] Check for interrupts before each layer, so Ctrl-C stops within a second
+* [x] Chunk size sweep: 32, 128 and 512 are within 6%, so 128 stays
 
 # Acceptance Criteria
 
-* [ ] Prompt reading speed is measured before and after
-* [ ] Reading speed does not drop with prompt length up to the context size
-* [ ] Prompt reading uses all cores
+* [x] Prompt reading speed is measured before and after
+* [ ] Reading speed does not drop with prompt length up to the context size (holds to 1.8k: 96 vs 93 tok/s; not measured beyond)
+* [ ] Prompt reading uses all cores (3.3 to 3.6 of 4)

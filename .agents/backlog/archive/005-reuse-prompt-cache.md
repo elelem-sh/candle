@@ -25,10 +25,12 @@ next one, cut the cache to it and feed only the rest.
 
 # Tasks
 
-* [ ] TBD (filled in design mode)
+* [x] Vendor quantized_qwen3 as `qwen3.rs` with one KV cache shared by prefill and decode
+* [x] Keep the last request's token ids, cut the cache to the shared prefix and read the rest
+* [x] Roll the cache back when a forward pass fails or is interrupted
 
 # Acceptance Criteria
 
-* [ ] The second turn reads only its new tokens
-* [ ] A conversation that changes earlier messages still gives correct output
-* [ ] Stats report how many prompt tokens were reused
+* [x] The second turn reads only its new tokens
+* [x] A conversation that changes earlier messages still gives correct output
+* [x] Stats report how many prompt tokens were reused
