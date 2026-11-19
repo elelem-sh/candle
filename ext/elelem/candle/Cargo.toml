@@ -13,6 +13,7 @@ magnus = { version = "0.8.2" }
 rb-sys = { version = "0.9", features = ["stable-api-compiled-fallback"] }
 anyhow = "1"
 candle-core = "0.11"
+candle-nn = "0.11"
 candle-transformers = "0.11"
 half = "2"
 minijinja = { version = "2", features = ["loop_controls", "json", "preserve_order"] }

@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 RSpec.describe Elelem::Candle::Model, if: ENV.fetch("ELELEM_CANDLE_TEST_MODEL", "") != "" do
-  subject(:model) { described_class.load(ENV.fetch("ELELEM_CANDLE_TEST_MODEL"), 4096) }
+  def self.loaded = @loaded ||= described_class.load(ENV.fetch("ELELEM_CANDLE_TEST_MODEL"), 4096)
+
+  let(:model) { self.class.loaded }
 
   let(:messages) { [{ role: "user", content: "Reply with the word pong and nothing else." }] }
   let(:options) { { max_tokens: 32, temperature: 0.0, top_k: 20, top_p: 0.95, seed: 1, chunk: 8 } }

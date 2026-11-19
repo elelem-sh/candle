@@ -1,10 +1,10 @@
 use crate::gguf;
+use crate::qwen3::ModelWeights;
 use crate::template::Template;
 use crate::tokenizer;
 use anyhow::{anyhow, bail, Result};
 use candle_core::{Device, Tensor};
 use candle_transformers::generation::{LogitsProcessor, Sampling};
-use candle_transformers::models::quantized_qwen3::ModelWeights;
 use std::time::Instant;
 use tokenizers::Tokenizer;
 
@@ -148,14 +148,14 @@ impl Engine {
             }
         }
         let mut sampler = LogitsProcessor::from_sampling(opts.seed, sampling);
-        self.weights.clear_kv_cache();
+        self.weights.truncate(0);
 
         let started = Instant::now();
         let mut logits = None;
-        for (i, chunk) in tokens.chunks(opts.chunk.max(1)).enumerate() {
+        for chunk in tokens.chunks(opts.chunk.max(1)) {
             check().map_err(Failure::Callback)?;
             let input = Tensor::new(chunk, &self.device)?.unsqueeze(0)?;
-            logits = Some(self.weights.forward(&input, i * opts.chunk.max(1))?);
+            logits = Some(self.weights.forward(&input)?);
         }
         let ms_prefill = started.elapsed().as_secs_f64() * 1000.0;
 
@@ -178,7 +178,7 @@ impl Engine {
                 on_piece(&piece).map_err(Failure::Callback)?;
             }
             let input = Tensor::new(&[next], &self.device)?.unsqueeze(0)?;
-            logits = self.weights.forward(&input, tokens.len() + n_decoded - 1)?;
+            logits = self.weights.forward(&input)?;
         }
         if let Some(piece) = stream.flush(&self.tokenizer)? {
             on_piece(&piece).map_err(Failure::Callback)?;
