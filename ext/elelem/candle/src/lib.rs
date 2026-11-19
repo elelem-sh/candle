@@ -1,75 +1,99 @@
-use magnus::{
-    block::Proc, function, method, prelude::*, Error, Ruby,
-};
+mod engine;
+mod gguf;
+mod template;
+mod tokenizer;
 
-/// Wraps a loaded candle model + tokenizer. Right now this is a skeleton:
-/// `Model::new` just records where the weights *would* load from, and
-/// `generate` proves out the streaming-token-across-FFI plumbing without a
-/// real forward pass yet.
-///
-/// Next steps to make this real (see candle-transformers examples for the
-/// reference implementations):
-///   1. Load a tokenizer (tokenizers::Tokenizer::from_file / from hf-hub).
-///   2. Load safetensors weights into a candle_core::Device (Cpu, or Cuda/
-///      Metal once those candle-core features are enabled).
-///   3. Build the model (e.g. candle_transformers::models::mistral::Model).
-///   4. In `generate`, run the actual token-by-token forward pass + sampling
-///      loop, calling `token_cb.call` per generated piece instead of the
-///      canned stub output below.
+use engine::{Engine, Failure, Options};
+use magnus::{block::Proc, function, method, prelude::*, Error, RHash, Ruby};
+use std::cell::RefCell;
+
 #[magnus::wrap(class = "Elelem::Candle::Model", free_immediately, size)]
-struct Model {
-    path: String,
-    device: String,
+struct Model(RefCell<Engine>);
+
+fn runtime_error(ruby: &Ruby, e: impl std::fmt::Display) -> Error {
+    Error::new(ruby.exception_runtime_error(), format!("candle: {e:#}"))
 }
 
 impl Model {
-    fn new(path: String, device: String) -> Self {
-        Self { path, device }
+    fn load(ruby: &Ruby, path: String, context: usize) -> Result<Self, Error> {
+        Engine::load(&path, context)
+            .map(|e| Self(RefCell::new(e)))
+            .map_err(|e| runtime_error(ruby, e))
     }
 
-    /// Streams generated text back to Ruby by invoking `token_cb` once per
-    /// piece. This is the interesting FFI boundary: Rust owns the generation
-    /// loop, Ruby supplies a block, and each token crosses the boundary as
-    /// it's produced rather than buffering the whole response.
-    ///
-    /// `&Ruby` must come before `self` here -- that's the signature
-    /// `RubyMethod2` (what `method!(_, 2)` resolves to for a 2-Ruby-arg
-    /// method that also wants the `&Ruby` handle) actually requires:
-    /// `Fn(&Ruby, RbSelf, T1, T2) -> Res`. A `&self` receiver puts `self`
-    /// first instead, which is why the original shape failed to satisfy
-    /// the trait bound at compile time.
-    fn generate(ruby: &Ruby, rb_self: &Model, prompt: String, token_cb: Proc) -> Result<(), Error> {
-        if rb_self.path.is_empty() {
-            return Err(Error::new(
-                ruby.exception_runtime_error(),
-                "Elelem::Candle::Model: no model path configured",
-            ));
-        }
+    fn context(&self) -> usize {
+        self.0.borrow().context
+    }
 
-        // TODO(real inference): replace this with the actual candle
-        // generation loop. Left as a stub so the Ruby <-> Rust streaming
-        // contract (Provider#fetch -> Model#generate -> block) can be
-        // exercised end to end before a real model is wired in.
-        let stub = format!(
-            "[stub:{} on {}] {}",
-            rb_self.path, rb_self.device, prompt
-        );
-        for word in stub.split_whitespace() {
-            token_cb.call::<_, magnus::Value>((format!("{word} "),))?;
-        }
+    fn architecture(&self) -> String {
+        self.0.borrow().architecture.clone()
+    }
 
-        Ok(())
+    fn render(
+        ruby: &Ruby,
+        rb_self: &Self,
+        messages: String,
+        tools: String,
+        thinking: bool,
+    ) -> Result<String, Error> {
+        let parse = |s: &str| {
+            serde_json::from_str::<serde_json::Value>(s).map_err(|e| runtime_error(ruby, e))
+        };
+        rb_self
+            .0
+            .borrow()
+            .render(&parse(&messages)?, &parse(&tools)?, thinking)
+            .map_err(|e| runtime_error(ruby, e))
+    }
+
+    fn generate(
+        ruby: &Ruby,
+        rb_self: &Self,
+        prompt: String,
+        opts: RHash,
+        on_piece: Proc,
+    ) -> Result<RHash, Error> {
+        let opts = Options {
+            max_tokens: opts.fetch(ruby.to_symbol("max_tokens"))?,
+            temperature: opts.fetch(ruby.to_symbol("temperature"))?,
+            top_k: opts.fetch(ruby.to_symbol("top_k"))?,
+            top_p: opts.fetch(ruby.to_symbol("top_p"))?,
+            seed: opts.fetch(ruby.to_symbol("seed"))?,
+            chunk: opts.fetch(ruby.to_symbol("chunk"))?,
+        };
+        let mut engine = rb_self
+            .0
+            .try_borrow_mut()
+            .map_err(|_| runtime_error(ruby, "generate is already running on this model"))?;
+        let stats = engine
+            .generate(
+                &prompt,
+                &opts,
+                |piece| on_piece.call::<_, magnus::Value>((piece,)).map(|_| ()),
+                || ruby.thread_check_ints(),
+            )
+            .map_err(|f| match f {
+                Failure::Model(e) => runtime_error(ruby, e),
+                Failure::Callback(e) => e,
+            })?;
+        let hash = ruby.hash_new();
+        hash.aset(ruby.to_symbol("stop_reason"), stats.stop_reason)?;
+        hash.aset(ruby.to_symbol("n_prompt"), stats.n_prompt)?;
+        hash.aset(ruby.to_symbol("n_decoded"), stats.n_decoded)?;
+        hash.aset(ruby.to_symbol("ms_prefill"), stats.ms_prefill)?;
+        hash.aset(ruby.to_symbol("ms_decode"), stats.ms_decode)?;
+        Ok(hash)
     }
 }
 
 #[magnus::init]
 fn init(ruby: &Ruby) -> Result<(), Error> {
-    let elelem = ruby.define_module("Elelem")?;
-    let candle = elelem.define_module("Candle")?;
+    let candle = ruby.define_module("Elelem")?.define_module("Candle")?;
     let model = candle.define_class("Model", ruby.class_object())?;
-
-    model.define_singleton_method("new", function!(Model::new, 2))?;
-    model.define_method("generate", method!(Model::generate, 2))?;
-
+    model.define_singleton_method("load", function!(Model::load, 2))?;
+    model.define_method("context", method!(Model::context, 0))?;
+    model.define_method("architecture", method!(Model::architecture, 0))?;
+    model.define_method("render", method!(Model::render, 3))?;
+    model.define_method("generate", method!(Model::generate, 3))?;
     Ok(())
 }

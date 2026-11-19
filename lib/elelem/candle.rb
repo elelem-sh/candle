@@ -4,15 +4,14 @@ require "json"
 require "elelem"
 
 require_relative "candle/version"
-require "elelem/candle/candle" # native extension (ext/elelem/candle)
+require "elelem/candle/candle"
 require_relative "candle/provider"
 
 Elelem.configure do |config|
-  config.provider(:candle) do
-    Elelem::Candle::Provider.new(
-      model: ENV.fetch("ELELEM_CANDLE_MODEL") do
-        raise "set ELELEM_CANDLE_MODEL=/path/to/model (safetensors dir or hf repo id)"
-      end
-    )
+  config.provider(:candle) do |model: nil, **|
+    path = model || ENV.fetch("ELELEM_CANDLE_MODEL") do
+      raise "no model: pass --model /path/to/model.gguf or set ELELEM_CANDLE_MODEL"
+    end
+    Elelem::Candle::Provider.build(path: File.expand_path(path))
   end
 end

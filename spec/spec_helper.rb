@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
-require_relative "../lib/elelem/candle/version"
+require "elelem/candle"
+require_relative "support/fake_model"
 
 RSpec.configure do |config|
   config.disable_monkey_patching!
