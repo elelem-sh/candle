@@ -136,6 +136,32 @@ RSpec.describe Elelem::Candle::Provider do
     end
   end
 
+  describe "context budget" do
+    let(:result) { "x" * 5_000 }
+    let(:messages) do
+      [{ role: "user", content: "read it" },
+       { role: "assistant", content: "", tool_calls: [{ id: "c1", name: "read", arguments: {} }] },
+       { role: "tool", tool_call_id: "c1", content: result }]
+    end
+
+    it "sends a prompt that fits as it is" do
+      fetch
+      expect(model.prompt).to include(result)
+    end
+
+    it "cuts the middle of the newest tool result to fit" do
+      model.context = 1_000
+      fetch
+      expect([model.count(model.prompt) <= 1_000 - 256, model.prompt]).to match([true, /characters removed/])
+    end
+
+    it "says the context is full when cutting is not enough" do
+      model.context = 300
+      events, result = fetch
+      expect([events.first[:text], result]).to match([/\A\[context full: the prompt is \d+ tokens, limit 44/, []])
+    end
+  end
+
   it "sends sampling options to the model" do
     fetch
     expect(model.options).to include(temperature: 0.7, top_k: 20, top_p: 0.8, max_tokens: 1024, chunk: 128)

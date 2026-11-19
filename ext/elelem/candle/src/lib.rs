@@ -42,6 +42,15 @@ impl Model {
         self.0.borrow().context
     }
 
+    fn count(ruby: &Ruby, rb_self: &Self, text: String) -> Result<usize, Error> {
+        rb_self
+            .0
+            .borrow()
+            .encode(&text)
+            .map(|t| t.len())
+            .map_err(|e| runtime_error(ruby, e))
+    }
+
     fn architecture(&self) -> String {
         self.0.borrow().architecture.clone()
     }
@@ -116,6 +125,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     model.define_singleton_method("load", function!(Model::load, 2))?;
     model.define_method("context", method!(Model::context, 0))?;
     model.define_method("architecture", method!(Model::architecture, 0))?;
+    model.define_method("count", method!(Model::count, 1))?;
     model.define_method("render", method!(Model::render, 3))?;
     model.define_method("generate", method!(Model::generate, 3))?;
     Ok(())
