@@ -46,7 +46,7 @@
 - prompt: Write a shell script run.sh that echoes ok.
   tool: write
   args: { path: run\.sh, content: echo }
-- prompt: Put the JSON {"a": 1} into data.json.
+- prompt: 'Put the JSON {"a": 1} into data.json.'
   tool: write
   args: { path: data\.json, content: '"a"' }
 - prompt: Create a file called empty.txt with the content nothing.
