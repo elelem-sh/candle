@@ -12,13 +12,33 @@ Experimental. Runs Qwen3 GGUF models on the CPU, including
 IQ4_XS, which candle cannot read, are converted to Q8_0 at load time.
 The tokenizer and chat template come from the GGUF file.
 
+It calls tools: the tool list goes into the chat template, and each
+`<tool_call>` the model writes becomes a `doing` event. A call cut off by
+the output limit is reported and never run. Each request reuses the cached
+prompt prefix from the last one, so a tool step reads only the new tokens.
+
+Use `Qwen3-4B`. `Qwen3-0.6B` is fast but experimental with tools. On
+`script/eval`:
+
+| Model | Calls that parse | Right tool | Right arguments | Multi-step tasks |
+|---|---|---|---|---|
+| Qwen3-4B | 40/40 | 40/40 | 40/40 | 5/8 |
+| Qwen3-0.6B | 39/40 | 22/40 | 22/40 | 3/8 |
+
+On a 4-core x86_64 with AVX2 (`script/bench`):
+
+| Model | Prompt reading | Replying | A tool step, to first token |
+|---|---|---|---|
+| Qwen3-0.6B | about 95 tokens/s | 30 tokens/s, 15 at 1.8k context | |
+| Qwen3-4B | about 15 tokens/s | 5 tokens/s | about 25 s |
+
 Limits:
 
 - Qwen3 only, CPU only.
-- No tool calls yet. The reply is plain text.
-- Every request reads the whole conversation again; nothing is reused
-  between turns.
-- Prompt reading is slow and gets slower as the prompt grows.
+- Replies get slower as the conversation grows.
+- The reply appears when it is finished; only thinking streams.
+- The 4B model sometimes makes two calls at once where the second needs
+  the first's result.
 
 ## Why a native extension instead of a subprocess
 
@@ -72,3 +92,16 @@ ELELEM_CANDLE_TEST_MODEL=~/.agents/models/default.gguf bin/test
 ```
 
 The second form also runs the specs that load a real model.
+
+```
+script/bench MODEL [--tokens N] [--decode N] [--chunk N] [--step] [--profile]
+script/eval MODEL [--no-gate] [--only N] [--no-runs]
+```
+
+`script/bench` prints prompt reading and reply speed. `--step` simulates
+a tool step, and `--profile` shows where the time goes.
+
+`script/eval` sends 40 one-step tasks with elelem's tools and checks the
+tool, its arguments and that the call parses, then runs 8 multi-step tasks
+in a temporary directory. It exits 1 when parsing or tool choice is under
+85%. It takes about 9 minutes on 4B and is not run in CI.
