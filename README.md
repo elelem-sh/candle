@@ -56,10 +56,10 @@ ELELEM_CANDLE_MODEL=~/.agents/models/default.gguf elelem -p candle
 |---|---|---|
 | `ELELEM_CANDLE_MODEL` | | Path to a Qwen3 `.gguf` file, used when `--model` is not given |
 | `ELELEM_CANDLE_N_CTX` | `8192` | Context in tokens, capped at the model's |
-| `ELELEM_CANDLE_MAX_TOKENS` | `0` | Output tokens per reply. 0 means the rest of the context |
-| `ELELEM_CANDLE_TEMP` | `0.6` | Temperature. 0 is greedy |
+| `ELELEM_CANDLE_MAX_TOKENS` | `1024`, or `2048` when thinking | Output tokens per reply. 0 means the rest of the context |
+| `ELELEM_CANDLE_TEMP` | `0.7`, or `0.6` when thinking | Temperature. 0 is greedy |
 | `ELELEM_CANDLE_TOP_K` | `20` | Top-k |
-| `ELELEM_CANDLE_TOP_P` | `0.95` | Top-p |
+| `ELELEM_CANDLE_TOP_P` | `0.8`, or `0.95` when thinking | Top-p |
 | `ELELEM_CANDLE_SEED` | `-1` | Sampling seed. Negative means random |
 | `ELELEM_CANDLE_THINKING` | `0` | `1` lets the model think before it replies |
 | `ELELEM_CANDLE_TARGET_CPU` | `native` | Build time. The `-C target-cpu` passed to rustc |

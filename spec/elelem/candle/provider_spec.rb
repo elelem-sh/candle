@@ -56,14 +56,22 @@ RSpec.describe Elelem::Candle::Provider do
 
   it "sends sampling options to the model" do
     fetch
-    expect(model.options).to include(temperature: 0.6, top_k: 20, top_p: 0.95, max_tokens: 0, chunk: 128)
+    expect(model.options).to include(temperature: 0.7, top_k: 20, top_p: 0.8, max_tokens: 1024, chunk: 128)
   end
 
   describe ".options" do
     it "reads the environment" do
-      options = described_class.options("ELELEM_CANDLE_TEMP" => "0", "ELELEM_CANDLE_SEED" => "7",
-                                        "ELELEM_CANDLE_MAX_TOKENS" => "64")
+      options = described_class.options({ "ELELEM_CANDLE_TEMP" => "0", "ELELEM_CANDLE_SEED" => "7",
+                                          "ELELEM_CANDLE_MAX_TOKENS" => "64" })
       expect(options).to include(temperature: 0.0, seed: 7, max_tokens: 64)
+    end
+
+    it "uses Qwen3's thinking settings when thinking" do
+      expect(described_class.options({}, thinking: true)).to include(temperature: 0.6, top_p: 0.95, max_tokens: 2048)
+    end
+
+    it "lets the environment lift the output cap" do
+      expect(described_class.options({ "ELELEM_CANDLE_MAX_TOKENS" => "0" }, thinking: true)).to include(max_tokens: 0)
     end
 
     it "picks a random seed by default" do
@@ -76,6 +84,12 @@ RSpec.describe Elelem::Candle::Provider do
       allow(Elelem::Candle::Model).to receive(:load).and_return(model)
       2.times { described_class.build(path: "/models/once.gguf", env: {}) }
       expect(Elelem::Candle::Model).to have_received(:load).with("/models/once.gguf", 8192).once
+    end
+
+    it "samples for thinking when thinking is on" do
+      allow(Elelem::Candle::Model).to receive(:load).and_return(model)
+      described_class.build(path: "/models/think.gguf", env: { "ELELEM_CANDLE_THINKING" => "1" }).fetch([])
+      expect(model.options).to include(temperature: 0.6, top_p: 0.95)
     end
   end
 end
