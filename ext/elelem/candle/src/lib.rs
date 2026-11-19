@@ -60,6 +60,9 @@ impl Model {
             top_p: opts.fetch(ruby.to_symbol("top_p"))?,
             seed: opts.fetch(ruby.to_symbol("seed"))?,
             chunk: opts.fetch(ruby.to_symbol("chunk"))?,
+            stop: opts
+                .lookup::<_, Option<Vec<String>>>(ruby.to_symbol("stop"))?
+                .unwrap_or_default(),
         };
         let mut engine = rb_self
             .0
@@ -78,6 +81,7 @@ impl Model {
             })?;
         let hash = ruby.hash_new();
         hash.aset(ruby.to_symbol("stop_reason"), stats.stop_reason)?;
+        hash.aset(ruby.to_symbol("stop_token"), stats.stop_token)?;
         hash.aset(ruby.to_symbol("n_prompt"), stats.n_prompt)?;
         hash.aset(ruby.to_symbol("n_decoded"), stats.n_decoded)?;
         hash.aset(ruby.to_symbol("ms_prefill"), stats.ms_prefill)?;

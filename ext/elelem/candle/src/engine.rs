@@ -15,10 +15,12 @@ pub struct Options {
     pub top_p: f64,
     pub seed: u64,
     pub chunk: usize,
+    pub stop: Vec<String>,
 }
 
 pub struct Stats {
     pub stop_reason: &'static str,
+    pub stop_token: Option<String>,
     pub n_prompt: usize,
     pub n_decoded: usize,
     pub ms_prefill: f64,
@@ -138,6 +140,13 @@ impl Engine {
                 temperature: opts.temperature,
             }
         };
+        let mut stop = self.stop.clone();
+        for text in &opts.stop {
+            match self.encode(text)?.as_slice() {
+                [id] => stop.push(*id),
+                _ => return Err(anyhow!("stop {text:?} is not a single token").into()),
+            }
+        }
         let mut sampler = LogitsProcessor::from_sampling(opts.seed, sampling);
         self.weights.clear_kv_cache();
 
@@ -154,13 +163,15 @@ impl Engine {
         let mut stream = TextStream::default();
         let mut logits = logits.ok_or_else(|| anyhow!("empty prompt"))?;
         let mut stop_reason = "length";
+        let mut stop_token = None;
         let mut n_decoded = 0;
         while n_decoded < max_tokens {
             check().map_err(Failure::Callback)?;
             let next = sampler.sample(&logits.squeeze(0)?)?;
             n_decoded += 1;
-            if self.stop.contains(&next) {
+            if stop.contains(&next) {
                 stop_reason = "stop";
+                stop_token = self.tokenizer.id_to_token(next);
                 break;
             }
             if let Some(piece) = stream.push(&self.tokenizer, next)? {
@@ -174,6 +185,7 @@ impl Engine {
         }
         Ok(Stats {
             stop_reason,
+            stop_token,
             n_prompt: tokens.len(),
             n_decoded,
             ms_prefill,
