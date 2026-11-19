@@ -7,6 +7,8 @@ AllCops:
     - "bin/**/*"
     - "vendor/**/*"
     - "fixtures/**/*"
+    - "tmp/**/*"
+    - "ext/elelem/candle/target/**/*"
 
 Metrics:
   Enabled: false
