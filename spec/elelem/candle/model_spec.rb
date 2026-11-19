@@ -47,4 +47,36 @@ RSpec.describe Elelem::Candle::Model, if: ENV.fetch("ELELEM_CANDLE_TEST_MODEL", 
     prompt = model.render(JSON.generate(messages), "[]", false)
     expect { model.generate(prompt, options, proc { raise ArgumentError, "stop" }) }.to raise_error(ArgumentError)
   end
+
+  it "replays a tool call so the next prompt extends the last one" do
+    recorder = Class.new(SimpleDelegator) do
+      attr_reader :prompts, :outputs
+
+      def render(*)
+        super.tap { (@prompts ||= []) << it }
+      end
+
+      def generate(prompt, options, on_piece)
+        text = +""
+        super(prompt, options, proc { |piece|
+          text << piece
+          on_piece.call(piece)
+        }).tap { (@outputs ||= []) << text }
+      end
+    end.new(model)
+    tools = [{ type: "function", function: { name: "read", description: "Read a file",
+                                             parameters: { type: "object", properties: { path: { type: "string" } },
+                                                           required: ["path"] } } }]
+    provider = Elelem::Candle::Provider.new(model: recorder, thinking: true,
+                                            options: options.merge(max_tokens: 600))
+    history = [{ role: "user", content: "Use the read tool to read notes.txt." }]
+    said = []
+    calls = provider.fetch(history, tools) { said << it[:text] if it[:type] == "saying" }
+    skip "the model did not call a tool" if calls.empty?
+
+    history += [{ role: "assistant", content: said.join, tool_calls: calls },
+                *calls.map { { role: "tool", tool_call_id: it[:id], content: "{\"content\":\"hi\"}" } }]
+    provider.fetch(history, tools)
+    expect(recorder.prompts[1]).to start_with("#{recorder.prompts[0]}#{recorder.outputs[0]}<|im_end|>\n")
+  end
 end

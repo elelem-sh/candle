@@ -5,15 +5,25 @@ RSpec.describe Elelem::Candle::Provider do
   let(:pieces) { %w[Hel lo] }
   let(:messages) { [{ role: "system", content: "terse" }, { role: "user", content: "hi" }] }
 
-  def fetch(provider = described_class.new(model:))
+  let(:tools) { [{ type: "function", function: { name: "read", description: "Read", parameters: {} } }] }
+  let(:provider) { described_class.new(model:) }
+
+  def fetch(provider = self.provider, messages: self.messages, tools: [])
     events = []
-    result = provider.fetch(messages, [{ type: "function" }]) { |event| events << event }
+    result = provider.fetch(messages, tools) { |event| events << event }
     [events, result]
   end
+
+  def call(body) = "<tool_call>\n#{body}\n</tool_call>"
 
   it "renders the conversation as JSON without tools" do
     fetch
     expect(model.rendered).to eq([JSON.generate(messages), "[]", false])
+  end
+
+  it "renders the tools" do
+    fetch(tools:)
+    expect(JSON.parse(model.rendered[1])).to eq(JSON.parse(JSON.generate(tools)))
   end
 
   it "passes thinking to the template" do
@@ -21,26 +31,36 @@ RSpec.describe Elelem::Candle::Provider do
     expect(model.rendered.last).to be(true)
   end
 
-  it "streams pieces as thinking, then says the reply" do
+  it "says the reply once without streaming it" do
     events, = fetch
-    expect(events).to eq([
-                           { type: "thinking", text: "Hel" },
-                           { type: "thinking", text: "lo" },
-                           { type: "saying", text: "Hello" }
-                         ])
+    expect(events).to eq([{ type: "saying", text: "Hello" }])
   end
 
-  it "returns no tool calls" do
+  it "stops on a new turn" do
+    fetch
+    expect(model.options[:stop]).to eq(["<|im_start|>"])
+  end
+
+  it "also stops on a made up tool response when tools are offered" do
+    fetch(tools:)
+    expect(model.options[:stop]).to eq(["<|im_start|>", "<tool_response>"])
+  end
+
+  it "returns no tool calls for a plain reply" do
     _, result = fetch
     expect(result).to eq([])
   end
 
   context "when the model thinks first" do
-    let(:pieces) { ["<think>\nhmm\n</think>\n\n", "pong"] }
+    let(:pieces) { ["<think>\nhm", "m\n</thi", "nk>\n\n", "pong"] }
 
-    it "leaves the thinking out of the reply" do
-      events, = fetch
-      expect(events.last).to eq(type: "saying", text: "pong")
+    it "streams the thinking and says the reply" do
+      events, = fetch(described_class.new(model:, thinking: true))
+      expect(events).to eq([
+                             { type: "thinking", text: "hm" },
+                             { type: "thinking", text: "m" },
+                             { type: "saying", text: "pong" }
+                           ])
     end
   end
 
@@ -51,6 +71,68 @@ RSpec.describe Elelem::Candle::Provider do
       model.stop_reason = "length"
       events, = fetch
       expect(events.last).to eq(type: "saying", text: "[no reply: ran out of output tokens]")
+    end
+  end
+
+  context "when the model calls a tool" do
+    let(:pieces) do
+      ["Let me look.\n<tool", "_call>\n{\"name\": \"read\", ", "\"arguments\": {\"path\": \"a\"}}\n</tool_call>"]
+    end
+
+    it "says the text and then does the call" do
+      events, result = fetch(tools:)
+      read = { name: "read", arguments: { "path" => "a" } }
+      expect(events.map { it.except(:id) }).to eq([{ type: "saying", text: "Let me look." }, read.merge(type: "doing")])
+      expect(result.map { it.except(:id) }).to eq([read])
+    end
+
+    it "gives each call a new id" do
+      ids = Array.new(2) { fetch(tools:).last.first[:id] }
+      expect(ids.uniq.size).to eq(2)
+    end
+
+    it "replays the arguments exactly as the model wrote them" do
+      _, result = fetch(tools:)
+      id = result.first[:id]
+      history = messages + [
+        { role: "assistant", content: "Let me look.",
+          tool_calls: [{ id:, name: "read", arguments: { "path" => "a" } }] },
+        { role: "tool", tool_call_id: id, content: "{}" }
+      ]
+      fetch(messages: history, tools:)
+      expect(JSON.parse(model.rendered.first)[2]["tool_calls"].first["arguments"]).to eq('{"path": "a"}')
+    end
+  end
+
+  context "when the model thinks and then calls a tool" do
+    let(:pieces) { ["<think>\nneed a\n</think>\n\n", call('{"name": "read", "arguments": {"path": "a"}}')] }
+
+    it "replays the reasoning" do
+      provider = described_class.new(model:, thinking: true)
+      _, result = fetch(provider, tools:)
+      history = messages + [{ role: "assistant", content: "", tool_calls: result }]
+      fetch(provider, messages: history, tools:)
+      expect(JSON.parse(model.rendered.first)[2]["reasoning_content"]).to eq("need a")
+    end
+  end
+
+  context "when a call is cut off" do
+    let(:pieces) { [call('{"name": "read", "arguments": {"path": "a"}}')] }
+
+    it "reports it and does nothing" do
+      model.stop_reason = "length"
+      events, result = fetch(tools:)
+      expect([events, result]).to eq([[{ type: "saying", text: Elelem::Candle::Reply::TRUNCATED }], []])
+    end
+  end
+
+  context "when the arguments are not JSON" do
+    let(:pieces) { [call('{"name": "read", "arguments": {"path": a}}')] }
+
+    it "passes the raw text on so the toolbox reports it to the model" do
+      _, result = fetch(tools:)
+      expect(result.first.slice(:name, :arguments))
+        .to eq(name: "read", arguments: '{"name": "read", "arguments": {"path": a}}')
     end
   end
 

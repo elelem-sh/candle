@@ -3,7 +3,7 @@
 module Elelem
   module Candle
     class Provider
-      THINK = %r{\A\s*<think>.*?(?:</think>|\z)}m
+      STOP = ["<|im_start|>", "<tool_response>"].freeze
       SAMPLING = {
         thinking: { temperature: 0.6, top_p: 0.95, max_tokens: 2048 },
         direct: { temperature: 0.7, top_p: 0.8, max_tokens: 1024 }
@@ -33,20 +33,57 @@ module Elelem
         @model = model
         @thinking = thinking
         @options = options
+        @calls = {}
       end
 
-      def fetch(messages, _tools = [], &block)
-        prompt = @model.render(JSON.generate(messages), "[]", @thinking)
+      def fetch(messages, tools = [], &block)
+        prompt = @model.render(JSON.generate(replay(messages)), JSON.generate(tools), @thinking)
         text = +""
-        stats = @model.generate(prompt, @options, proc { |piece|
+        think = ThinkStream.new
+        stats = @model.generate(prompt, @options.merge(stop: tools.empty? ? STOP.take(1) : STOP), proc { |piece|
           text << piece
-          block&.call(type: "thinking", text: piece)
+          shown = think.push(piece)
+          block&.call(type: "thinking", text: shown) unless shown.empty?
         })
         Elelem.logger.debug { "candle: #{stats}" }
-        reply = text.sub(THINK, "").strip
-        reply = "[no reply: ran out of output tokens]" if reply.empty? && stats[:stop_reason] == "length"
-        block&.call(type: "saying", text: reply) unless reply.empty?
-        []
+        reply = Reply.parse(text, thinking: @thinking, stop_reason: stats[:stop_reason], tools:)
+        say(reply, stats, &block)
+        remember(reply).each { block&.call(it.merge(type: "doing")) }
+      end
+
+      private
+
+      def say(reply, stats, &block)
+        lines = [reply.content, *reply.errors].reject { it.strip.empty? }
+        if lines.empty? && reply.calls.empty? && stats[:stop_reason] == "length"
+          lines << "[no reply: ran out of output tokens]"
+        end
+        block&.call(type: "saying", text: lines.join("\n\n")) unless lines.empty?
+      end
+
+      def remember(reply)
+        reply.calls.map.with_index do |call, i|
+          id = "call_#{SecureRandom.alphanumeric(12)}"
+          @calls[id] = { raw: call.raw, reasoning: i.zero? ? reply.reasoning : "" }
+          { id:, name: call.name, arguments: call.arguments }
+        end
+      end
+
+      def replay(messages)
+        seen = []
+        replayed = messages.map do |message|
+          message = message.transform_keys(&:to_sym)
+          next message unless message[:tool_calls]
+
+          calls = message[:tool_calls].map { it.transform_keys(&:to_sym) }
+          seen.concat(calls.map { it[:id] })
+          kept = calls.map { @calls[it[:id]] }
+          reasoning = kept.first&.fetch(:reasoning).to_s
+          message = message.merge(tool_calls: calls.zip(kept).map { |c, k| k ? c.merge(arguments: k[:raw]) : c })
+          reasoning.empty? ? message : message.merge(reasoning_content: reasoning)
+        end
+        @calls.select! { |id, _| seen.include?(id) }
+        replayed
       end
     end
   end

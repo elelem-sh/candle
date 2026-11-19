@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "delegate"
 require "elelem/candle"
 require_relative "support/fake_model"
 
