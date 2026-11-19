@@ -1,0 +1,140 @@
+- prompt: What is in notes.txt?
+  tool: read
+  args: { path: notes\.txt }
+- prompt: Show me the Gemfile.
+  tool: read
+  args: { path: Gemfile }
+- prompt: Open config/app.yml and tell me the port.
+  tool: read
+  args: { path: config/app\.yml }
+- prompt: Summarize README.md for me.
+  tool: read
+  args: { path: README\.md }
+- prompt: What does lib/server.rb do?
+  tool: read
+  args: { path: lib/server\.rb }
+- prompt: Read the file TODO and list the items.
+  tool: read
+  args: { path: TODO }
+- prompt: Check what version is written in VERSION.
+  tool: read
+  args: { path: VERSION }
+- prompt: Look at .env.example and tell me which variables I need.
+  tool: read
+  args: { path: \.env\.example }
+- prompt: Is there a license header in src/main.c?
+  tool: read
+  args: { path: src/main\.c }
+- prompt: Print the contents of docs/setup.md.
+  tool: read
+  args: { path: docs/setup\.md }
+- prompt: Create hello.txt containing the text hi.
+  tool: write
+  args: { path: hello\.txt, content: hi }
+- prompt: Write a file named greeting.rb that prints hello world in Ruby.
+  tool: write
+  args: { path: greeting\.rb, content: (?i)hello }
+- prompt: Save the word banana to fruit.txt.
+  tool: write
+  args: { path: fruit\.txt, content: banana }
+- prompt: Make a .gitignore that ignores the tmp directory.
+  tool: write
+  args: { path: \.gitignore, content: tmp }
+- prompt: Create notes/today.md with a heading that says Today.
+  tool: write
+  args: { path: notes/today\.md, content: Today }
+- prompt: Write a shell script run.sh that echoes ok.
+  tool: write
+  args: { path: run\.sh, content: echo }
+- prompt: Put the JSON {"a": 1} into data.json.
+  tool: write
+  args: { path: data\.json, content: '"a"' }
+- prompt: Create a file called empty.txt with the content nothing.
+  tool: write
+  args: { path: empty\.txt, content: nothing }
+- prompt: Write a Python file add.py with a function add(a, b) that returns their sum.
+  tool: write
+  args: { path: add\.py, content: def add }
+- prompt: Create CHANGELOG.md with a line that says Initial release.
+  tool: write
+  args: { path: CHANGELOG\.md, content: Initial release }
+- prompt: Run the tests with bin/test.
+  tool: execute
+  args: { command: bin/test }
+- prompt: What git branch am I on?
+  tool: execute
+  args: { command: git }
+- prompt: List the files in the current directory.
+  tool: execute
+  args: { command: \bls\b|find }
+- prompt: How much free disk space is there?
+  tool: execute
+  args: { command: \bdf\b }
+- prompt: Show me the last 3 git commits.
+  tool: execute
+  args: { command: git log }
+- prompt: Which version of ruby is installed?
+  tool: execute
+  args: { command: ruby }
+- prompt: Count the lines in main.go using wc.
+  tool: execute
+  args: { command: wc }
+- prompt: Find every TODO comment in this project with grep.
+  tool: execute
+  args: { command: grep|rg }
+- prompt: Run make build.
+  tool: execute
+  args: { command: make build }
+- prompt: Print the current working directory.
+  tool: execute
+  args: { command: pwd }
+- prompt: What is 2 + 2? Answer without using tools.
+  tool: none
+- prompt: In one sentence, what is a mutex?
+  tool: none
+- prompt: Say hello.
+  tool: none
+- prompt: Translate good morning into French.
+  tool: none
+- prompt: What is the capital of Japan?
+  tool: none
+- prompt: Give me a name for a cat.
+  tool: none
+- prompt: Explain recursion in one sentence.
+  tool: none
+- prompt: What does HTTP stand for?
+  tool: none
+- prompt: Is 17 a prime number?
+  tool: none
+- prompt: Thanks, that is all for now.
+  tool: none
+- prompt: Read secret.txt and tell me the code word in it.
+  run: true
+  files: { secret.txt: "The code word is pelican." }
+  answer: (?i)pelican
+- prompt: Create a file answer.txt that contains only the number 42.
+  run: true
+  file: { answer.txt: "42" }
+- prompt: Read numbers.txt, add the numbers up, and write the total to total.txt.
+  run: true
+  files: { numbers.txt: "3\n4\n5\n" }
+  file: { total.txt: "12" }
+- prompt: Run echo marmalade and tell me what it printed.
+  run: true
+  answer: (?i)marmalade
+- prompt: Copy the contents of a.txt into b.txt.
+  run: true
+  files: { a.txt: "copy me" }
+  file: { b.txt: copy me }
+- prompt: Read name.txt and write a file hello.txt that says Hello followed by that name.
+  run: true
+  files: { name.txt: "Ada" }
+  file: { hello.txt: (?i)hello,? ada }
+- prompt: How many lines are in poem.txt? Use a command to count them.
+  run: true
+  files: { poem.txt: "one\ntwo\nthree\nfour\n" }
+  answer: \b4\b|four
+- prompt: Replace the word cat with dog in pet.txt.
+  run: true
+  files: { pet.txt: "I have a cat." }
+  file: { pet.txt: (?i)i have a dog }

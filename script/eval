@@ -1,0 +1,86 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "bundler/setup"
+require "optparse"
+require "tmpdir"
+require "yaml"
+$LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
+require "elelem/candle"
+
+options = { gate: 0.85, only: nil, runs: true }
+OptionParser.new do |o|
+  o.banner = "usage: script/eval MODEL [options]"
+  o.on("--no-gate") { options[:gate] = nil }
+  o.on("--only N", Integer) { options[:only] = it }
+  o.on("--no-runs") { options[:runs] = false }
+end.parse!
+path = File.expand_path(ARGV.fetch(0) { abort "usage: script/eval MODEL [options]" })
+ENV["ELELEM_CANDLE_SEED"] ||= "1"
+
+tasks = YAML.load_file(File.expand_path("eval_tasks.yml", __dir__))
+tasks = tasks.first(options[:only]) if options[:only]
+session = Elelem.build(provider: "candle", provider_options: { model: path },
+                       input: Elelem::NullInput.new, output: Elelem::NullOutput.new)
+provider = session.provider
+tools = session.toolbox.to_a
+
+def matches?(args, expected)
+  args.is_a?(Hash) && expected.to_a.all? { |key, pattern| args[key].to_s.match?(Regexp.new(pattern)) }
+end
+
+def step(provider, session, tools, task)
+  events = []
+  messages = session.conversation.to_a([{ role: "user", content: task["prompt"] }])
+  calls = provider.fetch(messages, tools) { events << it }
+  call = calls.first
+  parsed = calls.all? { it[:arguments].is_a?(Hash) } &&
+           events.none? { it[:type] == "saying" && it[:text].include?(Elelem::Candle::Reply::TRUNCATED) }
+  chose = task["tool"] == "none" ? calls.empty? : call&.dig(:name) == task["tool"]
+  { parsed:, chose:, args: chose && (task["tool"] == "none" || matches?(call[:arguments], task["args"])),
+    got: call ? "#{call[:name]} #{call[:arguments].to_json[0, 60]}" : "(no call)" }
+end
+
+def run(path, task)
+  Dir.mktmpdir do |dir|
+    Dir.chdir(dir) do
+      task.fetch("files", {}).each { |name, text| File.write(name, text) }
+      session = Elelem.build(provider: "candle", provider_options: { model: path },
+                             input: Elelem::NullInput.new, output: Elelem::NullOutput.new)
+      answer = session.turn(task["prompt"]).to_s
+      files = task.fetch("file", {}).all? do |name, pattern|
+        File.exist?(name) && File.read(name).match?(Regexp.new(pattern))
+      end
+      ok = files && (task["answer"].nil? || answer.match?(Regexp.new(task["answer"])))
+      { ok:, got: answer.tr("\n", " ")[0, 60] }
+    end
+  end
+end
+
+steps = []
+runs = []
+tasks.each_with_index do |task, i|
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  if task["run"]
+    next unless options[:runs]
+
+    result = run(path, task)
+    runs << result[:ok]
+    mark = result[:ok] ? "pass" : "FAIL"
+  else
+    result = step(provider, session, tools, task)
+    steps << result
+    mark = [result[:parsed], result[:chose], result[:args]].map { it ? "y" : "n" }.join
+  end
+  seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+  puts format("%2d %-5s %6.1fs %-60s %s", i + 1, mark, seconds, task["prompt"][0, 60], result[:got])
+end
+
+rate = ->(list) { list.empty? ? 1.0 : list.count(true).fdiv(list.size) }
+parse = rate.call(steps.map { it[:parsed] })
+choice = rate.call(steps.map { it[:chose] })
+args = rate.call(steps.map { it[:args] })
+puts format("parse %d/%d %.0f%%  tool choice %d/%d %.0f%%  arguments %d/%d %.0f%%  runs %d/%d",
+            steps.count { it[:parsed] }, steps.size, parse * 100, steps.count { it[:chose] }, steps.size,
+            choice * 100, steps.count { it[:args] }, steps.size, args * 100, runs.count(true), runs.size)
+exit 1 if options[:gate] && [parse, choice].min < options[:gate]
