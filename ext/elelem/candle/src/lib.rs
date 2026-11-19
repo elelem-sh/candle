@@ -99,6 +99,9 @@ impl Model {
             stop: opts
                 .lookup::<_, Option<Vec<String>>>(ruby.to_symbol("stop"))?
                 .unwrap_or_default(),
+            profile: opts
+                .lookup::<_, Option<bool>>(ruby.to_symbol("profile"))?
+                .unwrap_or(false),
         };
         let mut engine = rb_self
             .0
@@ -123,6 +126,15 @@ impl Model {
         hash.aset(ruby.to_symbol("n_decoded"), stats.n_decoded)?;
         hash.aset(ruby.to_symbol("ms_prefill"), stats.ms_prefill)?;
         hash.aset(ruby.to_symbol("ms_decode"), stats.ms_decode)?;
+        if let Some([prefill, decode]) = stats.profile {
+            for (name, ms) in [("prefill", prefill), ("decode", decode)] {
+                let sections = ruby.hash_new();
+                for (section, value) in qwen3::SECTIONS.iter().zip(ms) {
+                    sections.aset(ruby.to_symbol(section), value)?;
+                }
+                hash.aset(ruby.to_symbol(format!("profile_{name}")), sections)?;
+            }
+        }
         Ok(hash)
     }
 }

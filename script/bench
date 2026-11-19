@@ -8,7 +8,7 @@ require "optparse"
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 require "elelem/candle"
 
-options = { tokens: 256, decode: 32, chunk: 128, context: 8192, step: false }
+options = { tokens: 256, decode: 32, chunk: 128, context: 8192, step: false, profile: false }
 OptionParser.new do |o|
   o.banner = "usage: script/bench MODEL [options]"
   o.on("--tokens N", Integer) { options[:tokens] = it }
@@ -16,6 +16,7 @@ OptionParser.new do |o|
   o.on("--chunk N", Integer) { options[:chunk] = it }
   o.on("--context N", Integer) { options[:context] = it }
   o.on("--step") { options[:step] = true }
+  o.on("--profile") { options[:profile] = true }
 end.parse!
 path = ARGV.fetch(0) { abort "usage: script/bench MODEL [options]" }
 
@@ -64,12 +65,20 @@ def report(label, result)
     label, result[:n_prompt], result[:n_reused].to_i, prefill, decode, result[:first], result[:wall],
     result[:cores], Digest::SHA256.hexdigest(result[:text])[0, 12]
   )
+  %i[profile_prefill profile_decode].each do |key|
+    next unless (sections = result[key])
+
+    total = sections.values.sum
+    puts format("  %-8s %s", key.to_s.delete_prefix("profile_"),
+                sections.map { |name, ms| format("%s=%.0f%%", name, ms * 100 / total) }.join(" "))
+  end
 end
 
 started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 model = Elelem::Candle::Model.load(File.expand_path(path), options[:context])
 puts format("load   %.2fs %s", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, File.basename(path))
-generate = { max_tokens: options[:decode], temperature: 0.0, top_k: 20, top_p: 0.95, seed: 1, chunk: options[:chunk] }
+generate = { max_tokens: options[:decode], temperature: 0.0, top_k: 20, top_p: 0.95, seed: 1, chunk: options[:chunk],
+             profile: options[:profile] }
 
 if options[:step]
   system = "You are a coding agent. Use the tools to answer."

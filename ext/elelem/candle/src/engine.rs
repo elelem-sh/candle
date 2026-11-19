@@ -1,5 +1,5 @@
 use crate::gguf;
-use crate::qwen3::ModelWeights;
+use crate::qwen3::{ModelWeights, Profile};
 use crate::template::Template;
 use crate::tokenizer;
 use anyhow::{anyhow, bail, Result};
@@ -16,6 +16,7 @@ pub struct Options {
     pub seed: u64,
     pub chunk: usize,
     pub stop: Vec<String>,
+    pub profile: bool,
 }
 
 pub struct Stats {
@@ -26,6 +27,7 @@ pub struct Stats {
     pub n_decoded: usize,
     pub ms_prefill: f64,
     pub ms_decode: f64,
+    pub profile: Option<[[f64; 6]; 2]>,
 }
 
 pub enum Failure<E> {
@@ -169,12 +171,20 @@ impl Engine {
         self.weights.truncate(n_reused);
         self.cached.truncate(n_reused);
 
+        let mut prefill = Profile {
+            on: opts.profile,
+            ..Default::default()
+        };
+        let mut decode = Profile {
+            on: opts.profile,
+            ..Default::default()
+        };
         let started = Instant::now();
         let mut logits = None;
         for chunk in tokens[n_reused..].chunks(opts.chunk.max(1)) {
             check().map_err(Failure::Callback)?;
             let input = Tensor::new(chunk, &self.device)?.unsqueeze(0)?;
-            logits = Some(self.weights.forward(&input)?);
+            logits = Some(self.weights.forward(&input, &mut prefill)?);
             self.cached.extend_from_slice(chunk);
         }
         let ms_prefill = started.elapsed().as_secs_f64() * 1000.0;
@@ -198,7 +208,7 @@ impl Engine {
                 on_piece(&piece).map_err(Failure::Callback)?;
             }
             let input = Tensor::new(&[next], &self.device)?.unsqueeze(0)?;
-            logits = self.weights.forward(&input)?;
+            logits = self.weights.forward(&input, &mut decode)?;
             self.cached.push(next);
         }
         if let Some(piece) = stream.flush(&self.tokenizer)? {
@@ -212,6 +222,7 @@ impl Engine {
             n_decoded,
             ms_prefill,
             ms_decode: started.elapsed().as_secs_f64() * 1000.0,
+            profile: opts.profile.then_some([prefill.ms, decode.ms]),
         })
     }
 }

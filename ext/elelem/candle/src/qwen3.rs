@@ -135,77 +135,86 @@ struct Attention {
 }
 
 impl Attention {
-    fn forward(&mut self, x: &Tensor, offset: usize) -> Result<Tensor> {
+    fn forward(&mut self, x: &Tensor, offset: usize, p: &mut Profile) -> Result<Tensor> {
         let (b, l, _) = x.dims3()?;
         let hidden = self.heads * self.head_dim;
-        let q = self
-            .q
-            .forward(x)?
-            .reshape((b, l, self.heads, self.head_dim))?
-            .transpose(1, 2)?;
-        let k = self
-            .k
-            .forward(x)?
-            .reshape((b, l, self.kv_heads, self.head_dim))?
-            .transpose(1, 2)?;
-        let v = self
-            .v
-            .forward(x)?
-            .reshape((b, l, self.kv_heads, self.head_dim))?
-            .transpose(1, 2)?;
-        let q =
-            self.q_norm
-                .forward(&q.flatten(0, 2)?)?
-                .reshape((b, self.heads, l, self.head_dim))?;
-        let k = self.k_norm.forward(&k.flatten(0, 2)?)?.reshape((
-            b,
-            self.kv_heads,
-            l,
-            self.head_dim,
-        ))?;
-        let (q, k) = self.rotary.apply(&q, &k, offset)?;
+        let (q, k, v) = p.time(MATMUL, || {
+            Ok((self.q.forward(x)?, self.k.forward(x)?, self.v.forward(x)?))
+        })?;
+        let (q, k) = p.time(NORM_ROPE, || {
+            let q = q
+                .reshape((b, l, self.heads, self.head_dim))?
+                .transpose(1, 2)?;
+            let k = k
+                .reshape((b, l, self.kv_heads, self.head_dim))?
+                .transpose(1, 2)?;
+            let q = self.q_norm.forward(&q.flatten(0, 2)?)?.reshape((
+                b,
+                self.heads,
+                l,
+                self.head_dim,
+            ))?;
+            let k = self.k_norm.forward(&k.flatten(0, 2)?)?.reshape((
+                b,
+                self.kv_heads,
+                l,
+                self.head_dim,
+            ))?;
+            self.rotary.apply(&q, &k, offset)
+        })?;
         let scale = 1.0 / (self.head_dim as f32).sqrt();
 
-        let k_rows = cpu_slice(&k.squeeze(0)?.transpose(0, 1)?)?;
-        let v_rows = cpu_slice(&v.squeeze(0)?.transpose(0, 1)?)?;
-        self.cache.append(&k_rows, &v_rows, l, self.head_dim);
+        p.time(KV_COPY, || {
+            let v = v
+                .reshape((b, l, self.kv_heads, self.head_dim))?
+                .squeeze(0)?;
+            let k_rows = cpu_slice(&k.squeeze(0)?.transpose(0, 1)?)?;
+            let v_rows = cpu_slice(&v)?;
+            self.cache.append(&k_rows, &v_rows, l, self.head_dim);
+            Ok(())
+        })?;
         let kv_len = self.cache.len();
 
         let ctx = if l == 1 {
-            let q = cpu_slice(&q)?;
-            causal_decode_f32_interleaved(
-                &q,
-                &self.cache.buf,
-                self.heads,
-                self.kv_heads,
-                self.head_dim,
-                kv_len,
-                scale,
-            )?
+            p.time(ATTENTION, || {
+                causal_decode_f32_interleaved(
+                    &cpu_slice(&q)?,
+                    &self.cache.buf,
+                    self.heads,
+                    self.kv_heads,
+                    self.head_dim,
+                    kv_len,
+                    scale,
+                )
+            })?
         } else {
-            let kv = Tensor::from_slice(
-                &self.cache.buf,
-                (kv_len, self.kv_heads, 2 * self.head_dim),
-                x.device(),
-            )?;
-            let k = kv.narrow(2, 0, self.head_dim)?.unsqueeze(0)?.contiguous()?;
-            let v = kv
-                .narrow(2, self.head_dim, self.head_dim)?
-                .unsqueeze(0)?
-                .contiguous()?;
-            let q = q.transpose(1, 2)?.contiguous()?;
-            flash_attn::<f32>(
-                &q,
-                &k,
-                &v,
-                scale,
-                AttnMask::causal_with_offset(offset),
-                None,
-                None,
-            )?
-            .transpose(1, 2)?
+            let (k, v) = p.time(KV_COPY, || {
+                let kv = Tensor::from_slice(
+                    &self.cache.buf,
+                    (kv_len, self.kv_heads, 2 * self.head_dim),
+                    x.device(),
+                )?;
+                Ok((
+                    kv.narrow(2, 0, self.head_dim)?.unsqueeze(0)?.contiguous()?,
+                    kv.narrow(2, self.head_dim, self.head_dim)?
+                        .unsqueeze(0)?
+                        .contiguous()?,
+                ))
+            })?;
+            p.time(ATTENTION, || {
+                flash_attn::<f32>(
+                    &q.transpose(1, 2)?.contiguous()?,
+                    &k,
+                    &v,
+                    scale,
+                    AttnMask::causal_with_offset(offset),
+                    None,
+                    None,
+                )?
+                .transpose(1, 2)
+            })?
         };
-        ctx.reshape((b, l, hidden))?.apply(&self.o)
+        p.time(MATMUL, || ctx.reshape((b, l, hidden))?.apply(&self.o))
     }
 }
 
@@ -219,12 +228,50 @@ struct Layer {
 }
 
 impl Layer {
-    fn forward(&mut self, x: &Tensor, offset: usize) -> Result<Tensor> {
-        let h = self.attn.forward(&self.ln1.forward(x)?, offset)?;
+    fn forward(&mut self, x: &Tensor, offset: usize, p: &mut Profile) -> Result<Tensor> {
+        let h = p.time(NORM_ROPE, || self.ln1.forward(x))?;
+        let h = self.attn.forward(&h, offset, p)?;
         let x = (x + h)?;
-        let h = self.ln2.forward(&x)?;
-        let gated = (self.gate.forward(&h)?.silu()? * self.up.forward(&h)?)?;
-        x + self.down.forward(&gated)?
+        let h = p.time(NORM_ROPE, || self.ln2.forward(&x))?;
+        let (gate, up) = p.time(MATMUL, || {
+            Ok((self.gate.forward(&h)?, self.up.forward(&h)?))
+        })?;
+        let gated = p.time(OTHER, || gate.silu()? * up)?;
+        let down = p.time(MATMUL, || self.down.forward(&gated))?;
+        x + down
+    }
+}
+
+pub const MATMUL: usize = 0;
+pub const ATTENTION: usize = 1;
+pub const KV_COPY: usize = 2;
+pub const NORM_ROPE: usize = 3;
+pub const LM_HEAD: usize = 4;
+pub const OTHER: usize = 5;
+pub const SECTIONS: [&str; 6] = [
+    "matmul",
+    "attention",
+    "kv_copy",
+    "norm_rope",
+    "lm_head",
+    "other",
+];
+
+#[derive(Default)]
+pub struct Profile {
+    pub on: bool,
+    pub ms: [f64; 6],
+}
+
+impl Profile {
+    fn time<T>(&mut self, section: usize, f: impl FnOnce() -> Result<T>) -> Result<T> {
+        if !self.on {
+            return f();
+        }
+        let started = std::time::Instant::now();
+        let out = f();
+        self.ms[section] += started.elapsed().as_secs_f64() * 1000.0;
+        out
     }
 }
 
@@ -308,7 +355,7 @@ impl ModelWeights {
         }
     }
 
-    pub fn forward(&mut self, input: &Tensor) -> Result<Tensor> {
+    pub fn forward(&mut self, input: &Tensor, p: &mut Profile) -> Result<Tensor> {
         let offset = self.len();
         let (b, l) = input.dims2()?;
         if b != 1 {
@@ -316,7 +363,7 @@ impl ModelWeights {
         }
         let mut h = self.embed.forward(input)?;
         for layer in &mut self.layers {
-            h = match layer.forward(&h, offset) {
+            h = match layer.forward(&h, offset, p) {
                 Ok(h) => h,
                 Err(e) => {
                     self.truncate(offset);
@@ -324,7 +371,9 @@ impl ModelWeights {
                 }
             };
         }
-        let h = self.norm.forward(&h)?;
-        self.lm_head.forward(&h.narrow(1, l - 1, 1)?)?.squeeze(1)
+        p.time(LM_HEAD, || {
+            let h = self.norm.forward(&h.narrow(1, l - 1, 1)?)?;
+            self.lm_head.forward(&h)?.squeeze(1)
+        })
     }
 }
