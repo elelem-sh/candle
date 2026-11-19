@@ -1,0 +1,110 @@
+{
+  "no_tools": {
+    "thinking": false,
+    "tools": [],
+    "messages": [
+      { "role": "system", "content": "You are terse." },
+      { "role": "user", "content": "Say hi." }
+    ]
+  },
+  "thinking_on": {
+    "thinking": true,
+    "tools": [],
+    "messages": [
+      { "role": "user", "content": "Say hi." }
+    ]
+  },
+  "tools": {
+    "thinking": false,
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "execute",
+          "description": "run a && b <x> > café",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "command": { "type": "string", "description": "shell command" },
+              "timeout": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["command"]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "read",
+          "description": "Read a file",
+          "parameters": { "type": "object", "properties": { "path": { "type": "string" } }, "required": ["path"] }
+        }
+      }
+    ],
+    "messages": [
+      { "role": "system", "content": "You are a coding agent." },
+      { "role": "user", "content": "List files." }
+    ]
+  },
+  "tool_history": {
+    "thinking": false,
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "read",
+          "description": "Read a file",
+          "parameters": { "type": "object", "properties": { "path": { "type": "string" } }, "required": ["path"] }
+        }
+      }
+    ],
+    "messages": [
+      { "role": "system", "content": "You are a coding agent." },
+      { "role": "user", "content": "Read a.txt and b.txt." },
+      {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          { "id": "call_1", "name": "read", "arguments": { "path": "a.txt", "note": "ü && <b>" } },
+          { "id": "call_2", "name": "read", "arguments": "{\"path\": \"b.txt\"}" }
+        ]
+      },
+      { "role": "tool", "tool_call_id": "call_1", "content": "{\"content\":\"alpha\"}" },
+      { "role": "tool", "tool_call_id": "call_2", "content": "{\"content\":\"beta\"}" }
+    ]
+  },
+  "reasoning": {
+    "thinking": true,
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "read",
+          "description": "Read a file",
+          "parameters": { "type": "object", "properties": { "path": { "type": "string" } }, "required": ["path"] }
+        }
+      }
+    ],
+    "messages": [
+      { "role": "user", "content": "Read a.txt." },
+      {
+        "role": "assistant",
+        "content": "I will read it.",
+        "reasoning_content": "The user wants a.txt.",
+        "tool_calls": [{ "id": "call_1", "name": "read", "arguments": "{\"path\": \"a.txt\"}" }]
+      },
+      { "role": "tool", "tool_call_id": "call_1", "content": "alpha" }
+    ]
+  },
+  "earlier_turns": {
+    "thinking": false,
+    "tools": [],
+    "messages": [
+      { "role": "user", "content": "First?" },
+      { "role": "assistant", "content": "<think>\nhmm\n</think>\n\nOne." },
+      { "role": "user", "content": "Second?" },
+      { "role": "assistant", "content": null },
+      { "role": "user", "content": "Third?" }
+    ]
+  }
+}

@@ -1,5 +1,8 @@
 use anyhow::Result;
-use minijinja::{context, Environment, Value};
+use minijinja::value::Kwargs;
+use minijinja::{context, Environment, Error, ErrorKind, Value};
+use serde_json::ser::{Formatter, PrettyFormatter, Serializer};
+use std::io;
 
 pub struct Template {
     env: Environment<'static>,
@@ -8,7 +11,10 @@ pub struct Template {
 impl Template {
     pub fn new(source: String) -> Result<Self> {
         let mut env = Environment::new();
+        env.set_trim_blocks(true);
+        env.set_lstrip_blocks(true);
         env.set_unknown_method_callback(minijinja_contrib::pycompat::unknown_method_callback);
+        env.add_filter("tojson", tojson);
         env.add_template_owned("chat", source)?;
         Ok(Self { env })
     }
@@ -31,4 +37,57 @@ impl Template {
             enable_thinking => thinking,
         })?)
     }
+}
+
+struct Python;
+
+impl Formatter for Python {
+    fn begin_array_value<W: ?Sized + io::Write>(
+        &mut self,
+        w: &mut W,
+        first: bool,
+    ) -> io::Result<()> {
+        if first {
+            Ok(())
+        } else {
+            w.write_all(b", ")
+        }
+    }
+
+    fn begin_object_key<W: ?Sized + io::Write>(
+        &mut self,
+        w: &mut W,
+        first: bool,
+    ) -> io::Result<()> {
+        if first {
+            Ok(())
+        } else {
+            w.write_all(b", ")
+        }
+    }
+
+    fn begin_object_value<W: ?Sized + io::Write>(&mut self, w: &mut W) -> io::Result<()> {
+        w.write_all(b": ")
+    }
+}
+
+fn tojson(value: &Value, kwargs: Kwargs) -> Result<Value, Error> {
+    let indent = kwargs.get::<Option<usize>>("indent")?;
+    kwargs.assert_all_used()?;
+    let mut out = Vec::new();
+    let written = match indent {
+        Some(n) => {
+            let pad = vec![b' '; n];
+            let mut ser = Serializer::with_formatter(&mut out, PrettyFormatter::with_indent(&pad));
+            serde::Serialize::serialize(value, &mut ser)
+        }
+        None => {
+            let mut ser = Serializer::with_formatter(&mut out, Python);
+            serde::Serialize::serialize(value, &mut ser)
+        }
+    };
+    written.map_err(|e| Error::new(ErrorKind::InvalidOperation, e.to_string()))?;
+    String::from_utf8(out)
+        .map(Value::from)
+        .map_err(|e| Error::new(ErrorKind::InvalidOperation, e.to_string()))
 }

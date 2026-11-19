@@ -14,6 +14,23 @@ fn runtime_error(ruby: &Ruby, e: impl std::fmt::Display) -> Error {
     Error::new(ruby.exception_runtime_error(), format!("candle: {e:#}"))
 }
 
+fn parse_json(ruby: &Ruby, s: &str) -> Result<serde_json::Value, Error> {
+    serde_json::from_str(s).map_err(|e| runtime_error(ruby, e))
+}
+
+fn render_template(
+    ruby: &Ruby,
+    source: String,
+    messages: String,
+    tools: String,
+    thinking: bool,
+) -> Result<String, Error> {
+    let (messages, tools) = (parse_json(ruby, &messages)?, parse_json(ruby, &tools)?);
+    template::Template::new(source)
+        .and_then(|t| t.render(&messages, &tools, thinking))
+        .map_err(|e| runtime_error(ruby, e))
+}
+
 impl Model {
     fn load(ruby: &Ruby, path: String, context: usize) -> Result<Self, Error> {
         Engine::load(&path, context)
@@ -36,13 +53,14 @@ impl Model {
         tools: String,
         thinking: bool,
     ) -> Result<String, Error> {
-        let parse = |s: &str| {
-            serde_json::from_str::<serde_json::Value>(s).map_err(|e| runtime_error(ruby, e))
-        };
         rb_self
             .0
             .borrow()
-            .render(&parse(&messages)?, &parse(&tools)?, thinking)
+            .render(
+                &parse_json(ruby, &messages)?,
+                &parse_json(ruby, &tools)?,
+                thinking,
+            )
             .map_err(|e| runtime_error(ruby, e))
     }
 
@@ -93,6 +111,7 @@ impl Model {
 #[magnus::init]
 fn init(ruby: &Ruby) -> Result<(), Error> {
     let candle = ruby.define_module("Elelem")?.define_module("Candle")?;
+    candle.define_singleton_method("render_template", function!(render_template, 4))?;
     let model = candle.define_class("Model", ruby.class_object())?;
     model.define_singleton_method("load", function!(Model::load, 2))?;
     model.define_method("context", method!(Model::context, 0))?;
