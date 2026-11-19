@@ -95,11 +95,13 @@ module Elelem
       end
 
       def remember(reply)
-        reply.calls.map.with_index do |call, i|
-          id = "call_#{SecureRandom.alphanumeric(12)}"
-          @calls[id] = { raw: call.raw, reasoning: i.zero? ? reply.reasoning : "" }
-          { id:, name: call.name, arguments: call.arguments }
-        end
+        call, *rest = reply.calls
+        Elelem.logger.debug { "candle: ran the first of #{reply.calls.size} calls" } if rest.any?
+        return [] unless call
+
+        id = "call_#{SecureRandom.alphanumeric(12)}"
+        @calls[id] = { raw: call.raw, reasoning: reply.reasoning }
+        [{ id:, name: call.name, arguments: call.arguments }]
       end
 
       def replay(messages)

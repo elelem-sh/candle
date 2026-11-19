@@ -116,6 +116,19 @@ RSpec.describe Elelem::Candle::Provider do
     end
   end
 
+  context "when the model makes two calls at once" do
+    let(:pieces) do
+      [call('{"name": "read", "arguments": {"path": "a"}}'), "\n",
+       call('{"name": "write", "arguments": {"path": "b", "content": "<content>"}}')]
+    end
+
+    it "runs only the first so the next step sees its result" do
+      events, result = fetch(tools:)
+      expect([events.map { it.except(:id) }, result.map { it[:name] }])
+        .to eq([[{ type: "doing", name: "read", arguments: { "path" => "a" } }], ["read"]])
+    end
+  end
+
   context "when a call is cut off" do
     let(:pieces) { [call('{"name": "read", "arguments": {"path": "a"}}')] }
 
