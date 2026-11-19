@@ -58,7 +58,7 @@ def run(model, messages, tools, options)
 end
 
 def report(label, result)
-  prefill = result[:n_prompt] / (result[:ms_prefill] / 1000.0)
+  prefill = (result[:n_prompt] - result[:n_reused].to_i) / (result[:ms_prefill] / 1000.0)
   decode = result[:n_decoded] / (result[:ms_decode] / 1000.0)
   puts format(
     "%-6s n_prompt=%d n_reused=%d prefill=%.1f tok/s decode=%.1f tok/s first=%.2fs total=%.2fs cores=%.2f sha=%s",
