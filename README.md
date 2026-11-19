@@ -22,7 +22,7 @@ Use `Qwen3-4B`. `Qwen3-0.6B` is fast but experimental with tools. On
 
 | Model | Calls that parse | Right tool | Right arguments | Multi-step tasks |
 |---|---|---|---|---|
-| Qwen3-4B | 40/40 | 40/40 | 40/40 | 5/8 |
+| Qwen3-4B | 40/40 | 40/40 | 40/40 | 7/8 |
 | Qwen3-0.6B | 39/40 | 22/40 | 22/40 | 3/8 |
 
 On a 4-core x86_64 with AVX2 (`script/bench`):
@@ -37,8 +37,8 @@ Limits:
 - Qwen3 only, CPU only.
 - Replies get slower as the conversation grows.
 - The reply appears when it is finished; only thinking streams.
-- The 4B model sometimes makes two calls at once where the second needs
-  the first's result.
+- One tool call per reply. When the model writes several, only the first
+  runs, so a later call can use its result.
 
 ## Why a native extension instead of a subprocess
 

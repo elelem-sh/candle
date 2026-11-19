@@ -27,9 +27,9 @@ Options:
 
 # Tasks
 
-* [ ] TBD (filled in design mode)
+* [x] Option 1: `Provider#remember` keeps the first call of a reply; `Reply` still parses them all
 
 # Acceptance Criteria
 
-* [ ] `script/eval` passes at least 7 of 8 multi-step tasks on 4B
-* [ ] Single-step scores do not drop
+* [x] `script/eval` passes at least 7 of 8 multi-step tasks on 4B (5/8 before, 7/8 after)
+* [x] Single-step scores do not drop (40/40 on parse, tool and arguments)
