@@ -52,6 +52,14 @@ impl Model {
             .map_err(|e| runtime_error(ruby, e))
     }
 
+    fn reset(ruby: &Ruby, rb_self: &Self) -> Result<(), Error> {
+        rb_self
+            .0
+            .try_borrow_mut()
+            .map(|mut e| e.reset())
+            .map_err(|_| runtime_error(ruby, "generate is already running on this model"))
+    }
+
     fn architecture(&self) -> String {
         self.0.borrow().architecture.clone()
     }
@@ -111,6 +119,7 @@ impl Model {
         hash.aset(ruby.to_symbol("stop_reason"), stats.stop_reason)?;
         hash.aset(ruby.to_symbol("stop_token"), stats.stop_token)?;
         hash.aset(ruby.to_symbol("n_prompt"), stats.n_prompt)?;
+        hash.aset(ruby.to_symbol("n_reused"), stats.n_reused)?;
         hash.aset(ruby.to_symbol("n_decoded"), stats.n_decoded)?;
         hash.aset(ruby.to_symbol("ms_prefill"), stats.ms_prefill)?;
         hash.aset(ruby.to_symbol("ms_decode"), stats.ms_decode)?;
@@ -127,6 +136,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     model.define_method("context", method!(Model::context, 0))?;
     model.define_method("architecture", method!(Model::architecture, 0))?;
     model.define_method("count", method!(Model::count, 1))?;
+    model.define_method("reset", method!(Model::reset, 0))?;
     model.define_method("render", method!(Model::render, 3))?;
     model.define_method("generate", method!(Model::generate, 3))?;
     Ok(())

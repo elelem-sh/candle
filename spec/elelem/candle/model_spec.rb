@@ -3,7 +3,7 @@
 RSpec.describe Elelem::Candle::Model, if: ENV.fetch("ELELEM_CANDLE_TEST_MODEL", "") != "" do
   def self.loaded = @loaded ||= described_class.load(ENV.fetch("ELELEM_CANDLE_TEST_MODEL"), 4096)
 
-  let(:model) { self.class.loaded }
+  let(:model) { self.class.loaded.tap(&:reset) }
 
   let(:messages) { [{ role: "user", content: "Reply with the word pong and nothing else." }] }
   let(:options) { { max_tokens: 32, temperature: 0.0, top_k: 20, top_p: 0.95, seed: 1, chunk: 8 } }
@@ -17,6 +17,58 @@ RSpec.describe Elelem::Candle::Model, if: ENV.fetch("ELELEM_CANDLE_TEST_MODEL", 
     text = +""
     stats = model.generate(model.render(JSON.generate(messages), "[]", false), options, proc { text << it })
     expect([text.downcase, stats[:stop_reason]]).to match([/pong/, "stop"])
+  end
+
+  describe "prompt cache" do
+    def run(prompt, opts = options)
+      text = +""
+      [model.generate(prompt, opts, proc { text << it }), text]
+    end
+
+    let(:prompt) { model.render(JSON.generate(messages), "[]", false) }
+
+    it "reuses all but the last token of a repeated prompt" do
+      first = run(prompt)
+      second = run(prompt)
+      expect([second[0][:n_reused], second[1]]).to eq([first[0][:n_prompt] - 1, first[1]])
+    end
+
+    it "reuses the earlier turn when the conversation grows" do
+      stats, reply = run(prompt)
+      longer = messages + [{ role: "assistant", content: reply }, { role: "user", content: "Again." }]
+      expect(run(model.render(JSON.generate(longer), "[]", false))[0][:n_reused]).to be >= stats[:n_prompt] - 8
+    end
+
+    it "matches a fresh run when an earlier message changes" do
+      run(prompt)
+      changed = model.render(JSON.generate([{ role: "user", content: "Reply with the word ping and nothing else." }]),
+                             "[]", false)
+      cached = run(changed)[1]
+      model.reset
+      expect(run(changed)[1]).to eq(cached)
+    end
+
+    it "matches a fresh run after an interrupted prefill" do
+      long = model.render(JSON.generate([{ role: "user", content: "#{"word " * 400}\nReply with pong." }]), "[]", false)
+      worker = Thread.new do
+        model.generate(long, options.merge(chunk: 8), proc {})
+      rescue Interrupt
+        :interrupted
+      end
+      sleep 0.5
+      worker.raise(Interrupt)
+      expect(worker.value).to eq(:interrupted)
+      partial = run(prompt)[1]
+      model.reset
+      expect(run(prompt)[1]).to eq(partial)
+    end
+
+    it "matches a fresh run after the block raises" do
+      expect { model.generate(prompt, options, proc { raise ArgumentError }) }.to raise_error(ArgumentError)
+      partial = run(prompt)[1]
+      model.reset
+      expect(run(prompt)[1]).to eq(partial)
+    end
   end
 
   it "stops on a caller's stop token" do

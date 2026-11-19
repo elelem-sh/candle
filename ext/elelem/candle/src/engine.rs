@@ -22,6 +22,7 @@ pub struct Stats {
     pub stop_reason: &'static str,
     pub stop_token: Option<String>,
     pub n_prompt: usize,
+    pub n_reused: usize,
     pub n_decoded: usize,
     pub ms_prefill: f64,
     pub ms_decode: f64,
@@ -49,6 +50,7 @@ pub struct Engine {
     tokenizer: Tokenizer,
     template: Template,
     stop: Vec<u32>,
+    cached: Vec<u32>,
     device: Device,
     pub context: usize,
     pub architecture: String,
@@ -85,10 +87,16 @@ impl Engine {
             tokenizer,
             template,
             stop,
+            cached: Vec::new(),
             device,
             context,
             architecture,
         })
+    }
+
+    pub fn reset(&mut self) {
+        self.weights.truncate(0);
+        self.cached.clear();
     }
 
     pub fn render(
@@ -148,14 +156,26 @@ impl Engine {
             }
         }
         let mut sampler = LogitsProcessor::from_sampling(opts.seed, sampling);
-        self.weights.truncate(0);
+        if self.weights.len() != self.cached.len() {
+            self.reset();
+        }
+        let n_reused = self
+            .cached
+            .iter()
+            .zip(&tokens)
+            .take_while(|(a, b)| a == b)
+            .count()
+            .min(tokens.len().saturating_sub(1));
+        self.weights.truncate(n_reused);
+        self.cached.truncate(n_reused);
 
         let started = Instant::now();
         let mut logits = None;
-        for chunk in tokens.chunks(opts.chunk.max(1)) {
+        for chunk in tokens[n_reused..].chunks(opts.chunk.max(1)) {
             check().map_err(Failure::Callback)?;
             let input = Tensor::new(chunk, &self.device)?.unsqueeze(0)?;
             logits = Some(self.weights.forward(&input)?);
+            self.cached.extend_from_slice(chunk);
         }
         let ms_prefill = started.elapsed().as_secs_f64() * 1000.0;
 
@@ -179,6 +199,7 @@ impl Engine {
             }
             let input = Tensor::new(&[next], &self.device)?.unsqueeze(0)?;
             logits = self.weights.forward(&input)?;
+            self.cached.push(next);
         }
         if let Some(piece) = stream.flush(&self.tokenizer)? {
             on_piece(&piece).map_err(Failure::Callback)?;
@@ -187,6 +208,7 @@ impl Engine {
             stop_reason,
             stop_token,
             n_prompt: tokens.len(),
+            n_reused,
             n_decoded,
             ms_prefill,
             ms_decode: started.elapsed().as_secs_f64() * 1000.0,
