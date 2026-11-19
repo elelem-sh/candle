@@ -28,7 +28,7 @@ only changes which value reaches it.
 
 # Acceptance Criteria
 
-* [ ] `elelem chat -p candle --model X` passes X to the provider
-* [ ] Without `--model`, `ELELEM_CANDLE_MODEL` is used as today
-* [ ] With neither, the error names both ways to set the model
-* [ ] A spec covers each case
+* [x] `elelem chat -p candle --model X` passes X to the provider
+* [x] Without `--model`, `ELELEM_CANDLE_MODEL` is used as today
+* [x] With neither, the error names both ways to set the model
+* [x] A spec covers each case

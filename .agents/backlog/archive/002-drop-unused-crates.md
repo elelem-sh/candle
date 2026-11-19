@@ -33,6 +33,7 @@ features.
 
 # Acceptance Criteria
 
-* [ ] Cargo.toml lists only crates that src/lib.rs uses
+* [x] Cargo.toml lists only crates that src/lib.rs uses
 * [ ] Cargo.lock no longer contains candle-core, tokenizers or hf-hub
-* [ ] bin/compile and bin/test pass
+  (inference landed, so only hf-hub and candle-nn went)
+* [x] bin/compile and bin/test pass
