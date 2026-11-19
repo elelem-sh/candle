@@ -1,7 +1,6 @@
+use crate::attention::{self, Shape};
 use candle_core::quantized::{gguf_file, QMatMul, QTensor};
 use candle_core::{bail, DType, Device, Module, Result, Storage, Tensor};
-use candle_nn::attention::cpu_flash::causal::causal_decode_f32_interleaved;
-use candle_nn::attention::{flash_attn, AttnMask};
 use candle_nn::Embedding;
 use candle_transformers::quantized_nn::RmsNorm;
 use std::io::{Read, Seek};
@@ -173,47 +172,17 @@ impl Attention {
             self.cache.append(&k_rows, &v_rows, l, self.head_dim);
             Ok(())
         })?;
-        let kv_len = self.cache.len();
-
-        let ctx = if l == 1 {
-            p.time(ATTENTION, || {
-                causal_decode_f32_interleaved(
-                    &cpu_slice(&q)?,
-                    &self.cache.buf,
-                    self.heads,
-                    self.kv_heads,
-                    self.head_dim,
-                    kv_len,
-                    scale,
-                )
-            })?
-        } else {
-            let (k, v) = p.time(KV_COPY, || {
-                let kv = Tensor::from_slice(
-                    &self.cache.buf,
-                    (kv_len, self.kv_heads, 2 * self.head_dim),
-                    x.device(),
-                )?;
-                Ok((
-                    kv.narrow(2, 0, self.head_dim)?.unsqueeze(0)?.contiguous()?,
-                    kv.narrow(2, self.head_dim, self.head_dim)?
-                        .unsqueeze(0)?
-                        .contiguous()?,
-                ))
-            })?;
-            p.time(ATTENTION, || {
-                flash_attn::<f32>(
-                    &q.transpose(1, 2)?.contiguous()?,
-                    &k,
-                    &v,
-                    scale,
-                    AttnMask::causal_with_offset(offset),
-                    None,
-                    None,
-                )?
-                .transpose(1, 2)
-            })?
-        };
+        let ctx = p.time(ATTENTION, || {
+            let shape = Shape {
+                heads: self.heads,
+                kv_heads: self.kv_heads,
+                head_dim: self.head_dim,
+                queries: l,
+                offset,
+            };
+            let ctx = attention::causal(&cpu_slice(&q)?, &self.cache.buf, &shape, scale)?;
+            Tensor::from_vec(ctx, (b, l, hidden), x.device())
+        })?;
         p.time(MATMUL, || ctx.reshape((b, l, hidden))?.apply(&self.o))
     }
 }

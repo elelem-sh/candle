@@ -1,3 +1,4 @@
+mod attention;
 mod engine;
 mod gguf;
 mod qwen3;
