@@ -5,6 +5,7 @@ require "elelem"
 
 require_relative "candle/version"
 require "elelem/candle/candle"
+require_relative "candle/reply"
 require_relative "candle/provider"
 
 Elelem.configure do |config|
