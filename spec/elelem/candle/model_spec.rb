@@ -17,6 +17,19 @@ RSpec.describe Elelem::Candle::Model, if: ENV.fetch("ELELEM_CANDLE_TEST_MODEL", 
     expect([text.downcase, stats[:stop_reason]]).to match([/pong/, "stop"])
   end
 
+  it "stops decoding when interrupted" do
+    prompt = model.render(JSON.generate([{ role: "user", content: "Count from 1 to 500." }]), "[]", false)
+    ready = Queue.new
+    worker = Thread.new do
+      model.generate(prompt, options.merge(max_tokens: 4000), proc { ready << true })
+    rescue Interrupt
+      :interrupted
+    end
+    ready.pop
+    worker.raise(Interrupt)
+    expect(worker.join(2)&.value).to eq(:interrupted)
+  end
+
   it "raises Ruby errors from the block" do
     prompt = model.render(JSON.generate(messages), "[]", false)
     expect { model.generate(prompt, options, proc { raise ArgumentError, "stop" }) }.to raise_error(ArgumentError)

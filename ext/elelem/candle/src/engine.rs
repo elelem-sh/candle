@@ -156,6 +156,7 @@ impl Engine {
         let mut stop_reason = "length";
         let mut n_decoded = 0;
         while n_decoded < max_tokens {
+            check().map_err(Failure::Callback)?;
             let next = sampler.sample(&logits.squeeze(0)?)?;
             n_decoded += 1;
             if self.stop.contains(&next) {
