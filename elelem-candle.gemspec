@@ -10,12 +10,15 @@ Gem::Specification.new do |spec|
 
   spec.summary = "A candle (huggingface/candle) plugin for elelem."
   spec.description = "A candle (huggingface/candle) plugin for elelem."
-  spec.homepage = "https://elelem.sh"
+  spec.homepage = "https://elelem.sh/plugins/candle/"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 4.0.0"
   spec.metadata["allowed_push_host"] = "https://rubygems.org"
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = "https://github.com/elelem-sh/candle"
+  spec.metadata["documentation_uri"] = spec.homepage
+  spec.metadata["bug_tracker_uri"] = "https://github.com/elelem-sh/candle/tree/main/.agents/backlog"
+  spec.metadata["changelog_uri"] = "https://github.com/elelem-sh/candle/blob/main/CHANGELOG.md"
   spec.metadata["rubygems_mfa_required"] = "true"
 
   gemspec = File.basename(__FILE__)

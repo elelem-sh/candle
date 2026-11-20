@@ -53,15 +53,18 @@ RubyGems only shows the new links after the next release.
 
 # Tasks
 
-* [ ] TBD (filled in design mode)
+* [x] Set the homepage and add `documentation_uri`, `bug_tracker_uri` and `changelog_uri`
+* [x] Rewrite elelem.sh/content/plugins/candle.md and drop the redirect that hid it (elelem.sh branch xlg/gallant-ritchie-j0hlts)
 
 # Acceptance Criteria
 
-* [ ] `spec.homepage` and `homepage_uri` are https://elelem.sh/plugins/candle/
-* [ ] `bug_tracker_uri` points at this repository's `.agents/backlog`,
+* [x] `spec.homepage` and `homepage_uri` are https://elelem.sh/plugins/candle/
+* [x] `bug_tracker_uri` points at this repository's `.agents/backlog`,
       not at GitHub Issues
-* [ ] `changelog_uri` and `source_code_uri` point at this repository
-* [ ] `allowed_push_host` and `rubygems_mfa_required` are unchanged
-* [ ] `gem build` succeeds and `gem spec` on the built gem shows every
+* [x] `changelog_uri` and `source_code_uri` point at this repository
+* [x] `allowed_push_host` and `rubygems_mfa_required` are unchanged
+* [x] `gem build` succeeds and `gem spec` on the built gem shows every
       link
-* [ ] Every link resolves (no 404) at release time
+* [ ] Every link resolves (no 404) at release time. Open: elelem-sh/candle
+      is private, so the GitHub links 404 for visitors, and elelem.sh serves
+      the new page only once its branch is merged and deployed
