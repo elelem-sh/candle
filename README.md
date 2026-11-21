@@ -39,7 +39,7 @@ Limits:
 
 - Qwen3 only, CPU only.
 - Small models reply slower past about 2k tokens of context: 0.6B drops
-  to about 18 tokens/s at 3.9k.
+  to about 22 tokens/s at 4.1k and 14 at 7.5k.
 - The reply appears when it is finished; only thinking streams.
 - One tool call per reply. When the model writes several, only the first
   runs, so a later call can use its result.
