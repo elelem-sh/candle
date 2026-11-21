@@ -209,7 +209,8 @@ mod simd {
                 for (h, o) in out.chunks_exact_mut(d).enumerate() {
                     let w = &w[h * kv_len + start..h * kv_len + end];
                     for t in (0..d).step_by(T) {
-                        let mut acc = [_mm256_setzero_ps(); T / 8];
+                        let mut tile = [_mm256_setzero_ps(); T / 8];
+                        let acc = &mut tile[..(d - t).min(T) / 8];
                         for (i, a) in acc.iter_mut().enumerate() {
                             *a = _mm256_loadu_ps(o.as_ptr().add(t + i * 8));
                         }

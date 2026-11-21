@@ -232,6 +232,9 @@ impl ModelWeights {
         let heads = gg.u32("qwen3.attention.head_count")?;
         let kv_heads = gg.u32("qwen3.attention.head_count_kv")?;
         let head_dim = gg.u32("qwen3.attention.key_length")?;
+        if head_dim % 8 != 0 {
+            bail!("head dim {head_dim} is not a multiple of 8");
+        }
         let blocks = gg.u32("qwen3.block_count")?;
         let hidden = gg.u32("qwen3.embedding_length")?;
         let max = gg.u32("qwen3.context_length")?;

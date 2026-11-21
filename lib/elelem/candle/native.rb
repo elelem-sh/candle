@@ -3,7 +3,7 @@
 module Elelem
   module Candle
     module Native
-      NEEDS = %w[avx2 fma f16c].freeze
+      NEEDS = %w[avx2 fma f16c bmi1 bmi2 movbe].freeze
 
       def self.load
         check_cpu if prebuilt?

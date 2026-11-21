@@ -42,8 +42,29 @@ jobs:
           path: pkg/*-${{ matrix.platform }}.gem
           if-no-files-found: error
 
+  fixture:
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      MODEL: https://huggingface.co/mradermacher/tiny-random-qwen3-GGUF/resolve/058102830a84bb976597f4d8462bafe0ea319358/tiny-random-qwen3.Q4_K_M.gguf
+      CONFIG: https://huggingface.co/Qwen/Qwen3-0.6B/resolve/c1899de289a04d12100db370d81485cdf75e47ca/tokenizer_config.json
+    steps:
+      - run: |
+          curl -sSfL -o tiny.gguf "$MODEL"
+          curl -sSfL -o tokenizer_config.json "$CONFIG"
+          sha256sum -c <<EOF
+          443289f8866c89b7630978ab6195e4ff9acfc4c1f46cf27d6f13b0f47fcaf0ca  tiny.gguf
+          d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101  tokenizer_config.json
+          EOF
+          pipx run --spec gguf==0.19.0 gguf-new-metadata --chat-template-config tokenizer_config.json tiny.gguf qwen3.gguf
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: qwen3-tiny
+          path: qwen3.gguf
+          if-no-files-found: error
+
   smoke:
-    needs: native
+    needs: [native, fixture]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -64,8 +85,18 @@ jobs:
         with:
           name: gem-${{ matrix.platform }}
           path: pkg
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: qwen3-tiny
       - uses: ruby/setup-ruby@3ff19f5e2baf30647122352b96108b1fbe250c64 # v1.299.0
         with:
           ruby-version: "4.0"
       - run: gem install --local pkg/*.gem --ignore-dependencies && gem install elelem
-      - run: ruby -e 'require "elelem/candle"; abort unless Elelem::Candle::Native.prebuilt?; puts Elelem::Candle::Model'
+      - run: |
+          ruby -rjson -relelem/candle -e '
+            abort "not prebuilt" unless Elelem::Candle::Native.prebuilt?
+            model = Elelem::Candle::Model.load("qwen3.gguf", 256)
+            prompt = model.render(JSON.generate([{ role: "user", content: "hi" }]), "[]", false)
+            options = { max_tokens: 8, temperature: 0.0, top_k: 20, top_p: 0.95, seed: 1, chunk: 4 }
+            2.times { p model.generate(prompt, options, proc {}) }
+          '
