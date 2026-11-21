@@ -6,7 +6,6 @@ module Elelem
       Call = Data.define(:name, :arguments, :raw)
 
       OPEN = "<tool_call>"
-      CLOSE = "</tool_call>"
       CALL = %r{<tool_call>(.*?)</tool_call>}m
       ARGUMENTS = /\A\s*\{\s*"name"\s*:\s*"(?:[^"\\]|\\.)*"\s*,\s*"(?:arguments|parameters)"\s*:\s*(.*)\}\s*\z/m
       FENCE = /\A```(?:json)?\s*\n(.*?)\n?```\z/m
@@ -42,26 +41,26 @@ module Elelem
           [m[1].strip, m.post_match]
         elsif text.match?(/\A\s*<think>/)
           [text.sub(/\A\s*<think>/, "").strip, ""]
-        elsif thinking && (i = text.index("</think>"))
-          [text[0...i].strip, text[(i + "</think>".size)..]]
+        elsif thinking && text.include?("</think>")
+          reasoning, _, rest = text.partition("</think>")
+          [reasoning.strip, rest]
         else
           ["", text]
         end
       end
 
       def extract(stop_reason)
-        head, tail = @content.split(OPEN, 2)
+        head, _, tail = @content.partition(OPEN)
         @content = head.delete_suffix("\n")
-        bodies = "#{OPEN}#{tail}".scan(CALL).flatten
-        unclosed = "#{OPEN}#{tail}".gsub(CALL, "").include?(OPEN)
-        return @errors << TRUNCATED if unclosed || stop_reason != "stop"
+        tail = OPEN + tail
+        return @errors << TRUNCATED if tail.gsub(CALL, "").include?(OPEN) || stop_reason != "stop"
 
-        bodies.map { call(it) }.uniq { [it.name, it.arguments] }.each { @calls << it }
+        @calls = tail.scan(CALL).flatten.map { call(it) }.uniq { [it.name, it.arguments] }
       end
 
       def fallback(names)
         body = @content.strip
-        body = Regexp.last_match(1) if body.match(FENCE)
+        body = body[FENCE, 1] || body
         object = parse_json(body)
         return unless object.is_a?(Hash) && names.include?(object["name"])
         return unless object.key?("arguments") || object.key?("parameters")
@@ -75,7 +74,7 @@ module Elelem
         return Call.new(name: body[/"name"\s*:\s*"([^"]+)"/, 1].to_s, arguments: body.strip, raw: body.strip) unless
           object.is_a?(Hash)
 
-        value = object.key?("arguments") ? object["arguments"] : object["parameters"]
+        value = object.fetch("arguments") { object["parameters"] }
         Call.new(name: object["name"].to_s, arguments: arguments_of(value), raw: raw_of(body, value))
       end
 

@@ -41,17 +41,21 @@ impl Template {
 
 struct Python;
 
+fn separate<W: ?Sized + io::Write>(w: &mut W, first: bool) -> io::Result<()> {
+    if first {
+        Ok(())
+    } else {
+        w.write_all(b", ")
+    }
+}
+
 impl Formatter for Python {
     fn begin_array_value<W: ?Sized + io::Write>(
         &mut self,
         w: &mut W,
         first: bool,
     ) -> io::Result<()> {
-        if first {
-            Ok(())
-        } else {
-            w.write_all(b", ")
-        }
+        separate(w, first)
     }
 
     fn begin_object_key<W: ?Sized + io::Write>(
@@ -59,11 +63,7 @@ impl Formatter for Python {
         w: &mut W,
         first: bool,
     ) -> io::Result<()> {
-        if first {
-            Ok(())
-        } else {
-            w.write_all(b", ")
-        }
+        separate(w, first)
     }
 
     fn begin_object_value<W: ?Sized + io::Write>(&mut self, w: &mut W) -> io::Result<()> {
@@ -86,8 +86,10 @@ fn tojson(value: &Value, kwargs: Kwargs) -> Result<Value, Error> {
             serde::Serialize::serialize(value, &mut ser)
         }
     };
-    written.map_err(|e| Error::new(ErrorKind::InvalidOperation, e.to_string()))?;
-    String::from_utf8(out)
-        .map(Value::from)
-        .map_err(|e| Error::new(ErrorKind::InvalidOperation, e.to_string()))
+    written.map_err(invalid)?;
+    String::from_utf8(out).map(Value::from).map_err(invalid)
+}
+
+fn invalid(e: impl std::fmt::Display) -> Error {
+    Error::new(ErrorKind::InvalidOperation, e.to_string())
 }

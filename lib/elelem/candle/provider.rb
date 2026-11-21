@@ -44,7 +44,7 @@ module Elelem
       def fetch(messages, tools = [], &block)
         prompt, size = fit(replay(messages), tools)
         unless prompt
-          block&.call(type: "saying", text: format(FULL, size:, limit: @model.context - RESERVE))
+          block&.call(type: "saying", text: format(FULL, size:, limit:))
           return []
         end
 
@@ -63,11 +63,13 @@ module Elelem
 
       private
 
+      def limit = @model.context - RESERVE
+
       def fit(messages, tools)
         loop do
           prompt = @model.render(JSON.generate(messages), JSON.generate(tools), @thinking)
           size = @model.count(prompt)
-          over = size - (@model.context - RESERVE)
+          over = size - limit
           return [prompt, size] unless over.positive?
 
           messages = shorten(messages, over)

@@ -1,5 +1,4 @@
 use candle_core::utils::barrier_pool;
-use candle_core::Result;
 use gemm::{gemm, Parallelism};
 use half::f16;
 use half::slice::HalfFloatSliceExt;
@@ -295,9 +294,9 @@ fn decode(q: &[f32], cache: &KvCache, s: &Shape, scale: f32) -> Vec<f32> {
     ctx
 }
 
-pub fn causal(q: &[f32], cache: &KvCache, s: &Shape, scale: f32) -> Result<Vec<f32>> {
+pub fn causal(q: &[f32], cache: &KvCache, s: &Shape, scale: f32) -> Vec<f32> {
     if s.queries == 1 {
-        return Ok(decode(q, cache, s, scale));
+        return decode(q, cache, s, scale);
     }
     let d = s.head_dim;
     let l = s.queries;
@@ -377,5 +376,5 @@ pub fn causal(q: &[f32], cache: &KvCache, s: &Shape, scale: f32) -> Result<Vec<f
             }
         }
     }
-    Ok(ctx)
+    ctx
 }

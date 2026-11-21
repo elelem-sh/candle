@@ -69,12 +69,12 @@ pub fn from_gguf(ct: &Content) -> Result<Tokenizer> {
     Ok(tokenizer)
 }
 
+fn get<'a>(ct: &'a Content, key: &str) -> Result<&'a Value> {
+    ct.metadata.get(key).ok_or_else(|| anyhow!("missing {key}"))
+}
+
 fn list<'a>(ct: &'a Content, key: &str) -> Result<&'a Vec<Value>> {
-    ct.metadata
-        .get(key)
-        .ok_or_else(|| anyhow!("missing {key}"))?
-        .to_vec()
-        .map_err(Into::into)
+    Ok(get(ct, key)?.to_vec()?)
 }
 
 fn strings(ct: &Content, key: &str) -> Result<Vec<String>> {
@@ -85,10 +85,5 @@ fn strings(ct: &Content, key: &str) -> Result<Vec<String>> {
 }
 
 pub fn text(ct: &Content, key: &str) -> Result<String> {
-    Ok(ct
-        .metadata
-        .get(key)
-        .ok_or_else(|| anyhow!("missing {key}"))?
-        .to_string()?
-        .clone())
+    Ok(get(ct, key)?.to_string()?.clone())
 }
