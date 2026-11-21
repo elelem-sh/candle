@@ -6,11 +6,18 @@ as a native extension.
 
 ## Install
 
-Needs Ruby 4.0, a Rust toolchain and `clang`.
-
 ```sh
 gem install elelem-candle
 ELELEM_CANDLE_MODEL=~/.agents/models/default.gguf elelem -p candle
+```
+
+Needs Ruby 4.0. Prebuilt gems cover Linux (x86_64, aarch64), macOS (Intel,
+Apple Silicon) and Windows (x64). The x86_64 builds need AVX2, from about
+2013 on. Elsewhere, or to tune for your CPU, build from source with Rust and
+`clang`:
+
+```sh
+gem install elelem-candle --platform ruby
 ```
 
 ## What it does
