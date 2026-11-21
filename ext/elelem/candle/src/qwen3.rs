@@ -1,4 +1,4 @@
-use crate::attention::{self, Shape};
+use crate::attention::{self, KvCache, Shape};
 use candle_core::quantized::{gguf_file, QMatMul, QTensor};
 use candle_core::{bail, DType, Device, Module, Result, Storage, Tensor};
 use candle_nn::Embedding;
@@ -36,40 +36,6 @@ impl<R: Read + Seek> Gguf<'_, R> {
         match self.ct.metadata.get(key) {
             Some(v) => Ok(v.to_f32()? as f64),
             None => bail!("cannot find {key} in metadata"),
-        }
-    }
-}
-
-pub struct KvCache {
-    buf: Vec<f32>,
-    stride: usize,
-}
-
-impl KvCache {
-    fn new(kv_heads: usize, head_dim: usize) -> Self {
-        Self {
-            buf: Vec::new(),
-            stride: kv_heads * 2 * head_dim,
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.buf.len() / self.stride
-    }
-
-    fn truncate(&mut self, len: usize) {
-        self.buf.truncate(len * self.stride);
-    }
-
-    fn append(&mut self, k: &[f32], v: &[f32], positions: usize, head_dim: usize) {
-        let row = self.stride / 2;
-        self.buf.reserve(positions * self.stride);
-        for p in 0..positions {
-            for h in 0..row / head_dim {
-                let at = p * row + h * head_dim;
-                self.buf.extend_from_slice(&k[at..at + head_dim]);
-                self.buf.extend_from_slice(&v[at..at + head_dim]);
-            }
         }
     }
 }
@@ -169,7 +135,7 @@ impl Attention {
                 .squeeze(0)?;
             let k_rows = cpu_slice(&k.squeeze(0)?.transpose(0, 1)?)?;
             let v_rows = cpu_slice(&v)?;
-            self.cache.append(&k_rows, &v_rows, l, self.head_dim);
+            self.cache.append(&k_rows, &v_rows, l);
             Ok(())
         })?;
         let ctx = p.time(ATTENTION, || {
@@ -180,7 +146,7 @@ impl Attention {
                 queries: l,
                 offset,
             };
-            let ctx = attention::causal(&cpu_slice(&q)?, &self.cache.buf, &shape, scale)?;
+            let ctx = attention::causal(&cpu_slice(&q)?, &self.cache, &shape, scale)?;
             Tensor::from_vec(ctx, (b, l, hidden), x.device())
         })?;
         p.time(MATMUL, || ctx.reshape((b, l, hidden))?.apply(&self.o))

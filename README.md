@@ -29,13 +29,17 @@ On a 4-core x86_64 with AVX2 (`script/bench`):
 
 | Model | Prompt reading | Replying | A tool step, to first token |
 |---|---|---|---|
-| Qwen3-0.6B | about 95 tokens/s | 30 tokens/s, 15 at 1.8k context | |
-| Qwen3-4B | about 15 tokens/s | 5 tokens/s | about 25 s |
+| Qwen3-0.6B | about 95 tokens/s | 28 tokens/s, 24 at 1.9k context | |
+| Qwen3-4B | about 15 tokens/s | 5 tokens/s, also at 1.9k context | about 25 s |
+
+The KV cache is stored as f16, half the memory of f32, so replying stays
+fast as the conversation grows.
 
 Limits:
 
 - Qwen3 only, CPU only.
-- Replies get slower as the conversation grows.
+- Small models reply slower past about 2k tokens of context: 0.6B drops
+  to about 18 tokens/s at 3.9k.
 - The reply appears when it is finished; only thinking streams.
 - One tool call per reply. When the model writes several, only the first
   runs, so a later call can use its result.

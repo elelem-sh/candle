@@ -16,13 +16,32 @@ gemm prefill kernel and a decode kernel that accepts f16.
 
 # SEE ALSO
 
-* [ ] ext/elelem/candle/src/qwen3.rs - KvCache
-* [ ] ext/elelem/candle/src/attention.rs - causal
-* [ ] candle-nn 0.11 src/attention/cpu_flash/causal.rs - causal_decode_f32_interleaved
+* [x] ext/elelem/candle/src/qwen3.rs - KvCache
+* [x] ext/elelem/candle/src/attention.rs - causal
+* [x] candle-nn 0.11 src/attention/cpu_flash/causal.rs - causal_decode_f32_interleaved
 
 # Tasks
 
-* [ ] TBD (filled in design mode)
+* [x] Move `KvCache` to `attention.rs`, one f16 K and V buffer per KV head
+* [x] Decode kernel that reads each KV head once for its whole query group
+* [x] AVX2, FMA and F16C path: 4 positions per block, vector exp, V in register tiles
+* [x] Scalar path for other CPUs
+* [x] Run decode on candle's thread pool, not rayon, so the two pools do not fight
+* [x] Prefill converts each KV head to f32 and keeps the gemm kernel
+
+# Results
+
+`script/bench --decode 64`, the baseline and f16 runs back to back:
+
+| Model | Context | f32 decode | f16 decode |
+|---|---|---|---|
+| 0.6B | 268 | 21.5 tok/s | 28.1 tok/s |
+| 0.6B | 1951 | 10.9 tok/s | 23.9 tok/s |
+| 4B | 268 | 4.6 tok/s | 4.7 tok/s |
+| 4B | 1951 | 2.7 tok/s | 4.7 tok/s |
+
+Prefill is unchanged. The decode kernel alone reaches about 24 GB/s at 4k
+context, the memory bandwidth of the test machine.
 
 # Acceptance Criteria
 
