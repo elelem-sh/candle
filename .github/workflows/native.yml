@@ -1,0 +1,71 @@
+name: Native
+
+on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - ".github/workflows/native.yml"
+      - "Cargo.*"
+      - "Rakefile"
+      - "*.gemspec"
+      - "ext/**"
+      - "lib/**"
+  workflow_call:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [x86_64-linux, aarch64-linux, x86_64-darwin, arm64-darwin, x64-mingw-ucrt]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@3ff19f5e2baf30647122352b96108b1fbe250c64 # v1.299.0
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+      - uses: oxidize-rb/actions/cross-gem@ec90b4aa48795518d79be3f5cc478d1d7ccd02a8 # v1.5.0
+        with:
+          platform: ${{ matrix.platform }}
+          ruby-versions: "4.0"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gem-${{ matrix.platform }}
+          path: pkg/*-${{ matrix.platform }}.gem
+          if-no-files-found: error
+
+  smoke:
+    needs: native
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: x86_64-linux, os: ubuntu-latest }
+          - { platform: aarch64-linux, os: ubuntu-24.04-arm }
+          - { platform: x86_64-darwin, os: macos-15-intel }
+          - { platform: arm64-darwin, os: macos-latest }
+          - { platform: x64-mingw-ucrt, os: windows-latest }
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: gem-${{ matrix.platform }}
+          path: pkg
+      - uses: ruby/setup-ruby@3ff19f5e2baf30647122352b96108b1fbe250c64 # v1.299.0
+        with:
+          ruby-version: "4.0"
+      - run: gem install --local pkg/*.gem --ignore-dependencies && gem install elelem
+      - run: ruby -e 'require "elelem/candle"; abort unless Elelem::Candle::Native.prebuilt?; puts Elelem::Candle::Model'
