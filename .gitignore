@@ -9,5 +9,6 @@
 /target/
 /ext/elelem/candle/target/
 /lib/elelem/candle/*.so
+/lib/elelem/candle/*/
 *.gem
 Gemfile.lock
