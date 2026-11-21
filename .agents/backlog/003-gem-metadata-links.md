@@ -1,70 +1,19 @@
-As a `person who finds elelem-candle on RubyGems`, I `want the
-gem page to link to the plugin's documentation, backlog and
-changelog`, so that `I can learn how to use it and see known
-problems without GitHub Issues`.
+As a `person who finds elelem-candle on RubyGems`, I `want the gem page to
+link to its docs, backlog and changelog`, so that `I can learn to use it and
+see known problems`.
 
 # SYNOPSIS
 
-Point the gemspec homepage at elelem.sh and add the standard links.
+Every gemspec link resolves.
 
 # DESCRIPTION
 
-RubyGems shows `homepage_uri` and the other `metadata` links on every
-gem page. Today `elelem-candle.gemspec` sets `spec.homepage`
-to the site root (https://elelem.sh) and sets only `homepage_uri`,
-`source_code_uri`, `allowed_push_host` and
-`rubygems_mfa_required`.
-There is no documentation, bug tracker or changelog link.
-
-Proposed change:
-
-```ruby
-spec.homepage = "https://elelem.sh/plugins/candle/"
-spec.metadata["homepage_uri"] = spec.homepage
-spec.metadata["source_code_uri"] = "https://github.com/elelem-sh/candle"
-spec.metadata["documentation_uri"] = spec.homepage
-spec.metadata["bug_tracker_uri"] = "https://github.com/elelem-sh/candle/tree/main/.agents/backlog"
-spec.metadata["changelog_uri"] = "https://github.com/elelem-sh/candle/blob/main/CHANGELOG.md"
-```
-
-The original proposal pointed `bug_tracker_uri` at GitHub Issues on
-elelem-sh/elelem.sh, filtered by label. That no longer fits: the
-project is moving its backlog out of GitHub Issues and into
-`.agents/backlog` story files in each repository, so the bug tracker
-link points at this repository's backlog directory instead.
-
-elelem.sh has no page for this plugin yet: /plugins/candle/ currently
-redirects to https://github.com/elelem-sh/candle, and /man/candle/ is a 404.
-Either add a page to the site before the release, or accept the
-redirect for now and leave documentation_uri out until a page exists.
-
-There is no CHANGELOG.md on main yet. release-please writes one
-on the first release, so ship the link with or after that release.
-
-Keep `allowed_push_host` and `rubygems_mfa_required` as they are.
-RubyGems only shows the new links after the next release.
-
-# SEE ALSO
-
-* [ ] elelem-candle.gemspec:13 - spec.homepage
-* [ ] elelem-candle.gemspec:18 - source_code_uri
-* [ ] .agents/backlog/ - where bug_tracker_uri will point
-* [ ] Formerly elelem-sh/elelem.sh#41
-
-# Tasks
-
-* [x] Set the homepage and add `documentation_uri`, `bug_tracker_uri` and `changelog_uri`
-* [x] Rewrite elelem.sh/content/plugins/candle.md and drop the redirect that hid it (elelem.sh branch xlg/gallant-ritchie-j0hlts)
+The gemspec links are set: homepage and documentation at
+https://elelem.sh/plugins/candle/, source and changelog at this repository,
+and the bug tracker at `.agents/backlog`. They 404 until this repository is
+public and elelem.sh is deployed with the candle page.
 
 # Acceptance Criteria
 
-* [x] `spec.homepage` and `homepage_uri` are https://elelem.sh/plugins/candle/
-* [x] `bug_tracker_uri` points at this repository's `.agents/backlog`,
-      not at GitHub Issues
-* [x] `changelog_uri` and `source_code_uri` point at this repository
-* [x] `allowed_push_host` and `rubygems_mfa_required` are unchanged
-* [x] `gem build` succeeds and `gem spec` on the built gem shows every
-      link
-* [ ] Every link resolves (no 404) at release time. Open: elelem-sh/candle
-      is private, so the GitHub links 404 for visitors, and elelem.sh serves
-      the new page only once its branch is merged and deployed
+* [x] `gem spec` on the built gem shows every link
+* [ ] Every link resolves at release time
