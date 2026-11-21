@@ -1,6 +1,6 @@
 use crate::attention::{self, KvCache, Shape};
 use candle_core::quantized::{gguf_file, QMatMul, QTensor};
-use candle_core::{bail, DType, Device, Module, Result, Storage, Tensor};
+use candle_core::{bail, Device, Module, Result, Storage, Tensor};
 use candle_nn::Embedding;
 use candle_transformers::quantized_nn::RmsNorm;
 use std::io::{Read, Seek};
@@ -25,18 +25,19 @@ impl<R: Read + Seek> Gguf<'_, R> {
         RmsNorm::from_qtensor(self.tensor(name)?, eps)
     }
 
-    fn u32(&self, key: &str) -> Result<usize> {
+    fn metadata(&self, key: &str) -> Result<&gguf_file::Value> {
         match self.ct.metadata.get(key) {
-            Some(v) => Ok(v.to_u32()? as usize),
+            Some(v) => Ok(v),
             None => bail!("cannot find {key} in metadata"),
         }
     }
 
+    fn u32(&self, key: &str) -> Result<usize> {
+        Ok(self.metadata(key)?.to_u32()? as usize)
+    }
+
     fn f32(&self, key: &str) -> Result<f64> {
-        match self.ct.metadata.get(key) {
-            Some(v) => Ok(v.to_f32()? as f64),
-            None => bail!("cannot find {key} in metadata"),
-        }
+        Ok(self.metadata(key)?.to_f32()? as f64)
     }
 }
 
@@ -57,16 +58,14 @@ struct Rotary {
 }
 
 impl Rotary {
-    fn new(dtype: DType, head_dim: usize, max: usize, theta: f64, dev: &Device) -> Result<Self> {
+    fn new(head_dim: usize, max: usize, theta: f64, dev: &Device) -> Result<Self> {
         let inv_freq: Vec<_> = (0..head_dim)
             .step_by(2)
             .map(|i| 1f32 / theta.powf(i as f64 / head_dim as f64) as f32)
             .collect();
         let n = inv_freq.len();
-        let inv_freq = Tensor::from_vec(inv_freq, (1, n), dev)?.to_dtype(dtype)?;
-        let t = Tensor::arange(0u32, max as u32, dev)?
-            .to_dtype(dtype)?
-            .reshape((max, 1))?;
+        let inv_freq = Tensor::from_vec(inv_freq, (1, n), dev)?;
+        let t = Tensor::arange(0f32, max as f32, dev)?.reshape((max, 1))?;
         let freqs = t.matmul(&inv_freq)?;
         Ok(Self {
             sin: freqs.sin()?,
@@ -76,8 +75,8 @@ impl Rotary {
 
     fn apply(&self, q: &Tensor, k: &Tensor, offset: usize) -> Result<(Tensor, Tensor)> {
         let (_, _, len, _) = q.dims4()?;
-        let cos = self.cos.narrow(0, offset, len)?.to_dtype(q.dtype())?;
-        let sin = self.sin.narrow(0, offset, len)?.to_dtype(q.dtype())?;
+        let cos = self.cos.narrow(0, offset, len)?;
+        let sin = self.sin.narrow(0, offset, len)?;
         Ok((
             candle_nn::rotary_emb::rope(&q.contiguous()?, &cos, &sin)?,
             candle_nn::rotary_emb::rope(&k.contiguous()?, &cos, &sin)?,
@@ -127,8 +126,6 @@ impl Attention {
             ))?;
             self.rotary.apply(&q, &k, offset)
         })?;
-        let scale = 1.0 / (self.head_dim as f32).sqrt();
-
         p.time(KV_COPY, || {
             let v = v
                 .reshape((b, l, self.kv_heads, self.head_dim))?
@@ -146,10 +143,11 @@ impl Attention {
                 queries: l,
                 offset,
             };
-            let ctx = attention::causal(&cpu_slice(&q)?, &self.cache, &shape, scale)?;
+            let scale = 1.0 / (self.head_dim as f32).sqrt();
+            let ctx = attention::causal(&cpu_slice(&q)?, &self.cache, &shape, scale);
             Tensor::from_vec(ctx, (b, l, hidden), x.device())
         })?;
-        p.time(MATMUL, || ctx.reshape((b, l, hidden))?.apply(&self.o))
+        p.time(MATMUL, || ctx.apply(&self.o))
     }
 }
 
@@ -192,13 +190,16 @@ pub const SECTIONS: [&str; 6] = [
     "other",
 ];
 
-#[derive(Default)]
 pub struct Profile {
-    pub on: bool,
+    on: bool,
     pub ms: [f64; 6],
 }
 
 impl Profile {
+    pub fn new(on: bool) -> Self {
+        Self { on, ms: [0.0; 6] }
+    }
+
     fn time<T>(&mut self, section: usize, f: impl FnOnce() -> Result<T>) -> Result<T> {
         if !self.on {
             return f();
@@ -223,10 +224,6 @@ impl ModelWeights {
         reader: &mut R,
         device: &Device,
     ) -> Result<Self> {
-        let dtype = match ct.metadata.get("general.dtype").map(|v| v.to_u32()) {
-            Some(Ok(0)) => DType::F32,
-            _ => DType::F16,
-        };
         let mut gg = Gguf {
             ct,
             reader,
@@ -242,7 +239,7 @@ impl ModelWeights {
         let theta = gg.f32("qwen3.rope.freq_base")?;
 
         let embed = Embedding::new(gg.tensor("token_embd.weight")?.dequantize(device)?, hidden);
-        let rotary = Arc::new(Rotary::new(dtype, head_dim, max, theta, device)?);
+        let rotary = Arc::new(Rotary::new(head_dim, max, theta, device)?);
         let mut layers = Vec::with_capacity(blocks);
         for i in 0..blocks {
             let p = format!("blk.{i}");
