@@ -8,8 +8,9 @@ Gem::Specification.new do |spec|
   spec.authors = ["mo khan"]
   spec.email = ["mo@mokhan.ca"]
 
-  spec.summary = "A candle (huggingface/candle) plugin for elelem."
-  spec.description = "A candle (huggingface/candle) plugin for elelem."
+  spec.summary = "An elelem provider that runs Qwen3 GGUF models on the CPU with candle."
+  spec.description = "Runs Qwen3 GGUF models in process with huggingface/candle, with tool calls " \
+                     "and a reused prompt cache. Prebuilt for Linux, macOS and Windows."
   spec.homepage = "https://elelem.sh/plugins/candle/"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 4.0.0"
