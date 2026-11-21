@@ -21,12 +21,18 @@ Gem::Specification.new do |spec|
   spec.metadata["changelog_uri"] = "https://github.com/elelem-sh/candle/blob/main/CHANGELOG.md"
   spec.metadata["rubygems_mfa_required"] = "true"
 
-  gemspec = File.basename(__FILE__)
-  spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
-    ls.readlines("\x0", chomp: true).reject do |f|
-      (f == gemspec) || f.start_with?(*%w[bin/ Gemfile .gitignore target/])
-    end
-  end
+  spec.files = Dir[
+    "LICENSE.txt",
+    "LICENSE-THIRD-PARTY.txt",
+    "lib/**/*.rb",
+    "exe/*",
+    "Cargo.toml",
+    "Cargo.lock",
+    "ext/elelem/candle/Cargo.toml",
+    "ext/elelem/candle/build.rs",
+    "ext/elelem/candle/extconf.rb",
+    "ext/elelem/candle/src/**/*.rs"
+  ]
   spec.extensions = ["ext/elelem/candle/extconf.rb"]
   spec.bindir = "exe"
   spec.executables = ["elelem-candle"]
