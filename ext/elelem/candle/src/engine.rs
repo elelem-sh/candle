@@ -5,6 +5,7 @@ use crate::tokenizer;
 use anyhow::{anyhow, bail, Result};
 use candle_core::{Device, Tensor};
 use candle_transformers::generation::{LogitsProcessor, Sampling};
+use std::cell::{RefCell, RefMut};
 use std::time::Instant;
 use tokenizers::Tokenizer;
 
@@ -47,15 +48,25 @@ impl<E> From<candle_core::Error> for Failure<E> {
     }
 }
 
-pub struct Engine {
+struct Session {
     weights: ModelWeights,
+    cached: Vec<u32>,
+}
+
+impl Session {
+    fn truncate(&mut self, len: usize) {
+        self.weights.truncate(len);
+        self.cached.truncate(len);
+    }
+}
+
+pub struct Engine {
+    session: RefCell<Session>,
     tokenizer: Tokenizer,
     template: Template,
     stop: Vec<u32>,
-    cached: Vec<u32>,
     device: Device,
     pub context: usize,
-    pub architecture: String,
 }
 
 impl Engine {
@@ -79,26 +90,32 @@ impl Engine {
             .collect();
         let device = Device::Cpu;
         let weights = ModelWeights::from_gguf(ct, &mut reader, &device)?;
-        let context = if context == 0 {
-            trained
-        } else {
-            context.min(trained)
-        };
         Ok(Self {
-            weights,
+            session: RefCell::new(Session {
+                weights,
+                cached: Vec::new(),
+            }),
             tokenizer,
             template,
             stop,
-            cached: Vec::new(),
             device,
-            context,
-            architecture,
+            context: if context == 0 {
+                trained
+            } else {
+                context.min(trained)
+            },
         })
     }
 
-    pub fn reset(&mut self) {
-        self.weights.truncate(0);
-        self.cached.clear();
+    fn session(&self) -> Result<RefMut<'_, Session>> {
+        self.session
+            .try_borrow_mut()
+            .map_err(|_| anyhow!("generate is already running on this model"))
+    }
+
+    pub fn reset(&self) -> Result<()> {
+        self.session()?.truncate(0);
+        Ok(())
     }
 
     pub fn render(
@@ -120,12 +137,13 @@ impl Engine {
     }
 
     pub fn generate<E>(
-        &mut self,
+        &self,
         prompt: &str,
         opts: &Options,
         mut on_piece: impl FnMut(&str) -> Result<(), E>,
         mut check: impl FnMut() -> Result<(), E>,
     ) -> Result<Stats, Failure<E>> {
+        let mut session = self.session()?;
         let tokens = self.encode(prompt)?;
         if tokens.len() >= self.context {
             return Err(anyhow!(
@@ -158,33 +176,26 @@ impl Engine {
             }
         }
         let mut sampler = LogitsProcessor::from_sampling(opts.seed, sampling);
-        if self.weights.len() != self.cached.len() {
-            self.reset();
+        if session.weights.len() != session.cached.len() {
+            session.truncate(0);
         }
-        let n_reused = self
+        let n_reused = session
             .cached
             .iter()
             .zip(&tokens)
             .take_while(|(a, b)| a == b)
             .count()
             .min(tokens.len().saturating_sub(1));
-        self.weights.truncate(n_reused);
-        self.cached.truncate(n_reused);
+        session.truncate(n_reused);
 
-        let mut prefill = Profile {
-            on: opts.profile,
-            ..Default::default()
-        };
-        let mut decode = Profile {
-            on: opts.profile,
-            ..Default::default()
-        };
+        let mut prefill = Profile::new(opts.profile);
+        let mut decode = Profile::new(opts.profile);
         let started = Instant::now();
         let mut logits = None;
         for chunk in tokens[n_reused..].chunks(opts.chunk.max(1)) {
             let input = Tensor::new(chunk, &self.device)?.unsqueeze(0)?;
             let mut interrupted = None;
-            let out = self
+            let out = session
                 .weights
                 .forward(&input, &mut prefill, &mut || match check() {
                     Ok(()) => false,
@@ -198,7 +209,7 @@ impl Engine {
                 (None, Some(e)) => return Err(Failure::Callback(e)),
                 (None, None) => return Err(anyhow!("prefill stopped without a reason").into()),
             }
-            self.cached.extend_from_slice(chunk);
+            session.cached.extend_from_slice(chunk);
         }
         let ms_prefill = started.elapsed().as_secs_f64() * 1000.0;
 
@@ -221,11 +232,11 @@ impl Engine {
                 on_piece(&piece).map_err(Failure::Callback)?;
             }
             let input = Tensor::new(&[next], &self.device)?.unsqueeze(0)?;
-            logits = self
+            logits = session
                 .weights
                 .forward(&input, &mut decode, &mut || false)?
                 .ok_or_else(|| anyhow!("decode stopped without a reason"))?;
-            self.cached.push(next);
+            session.cached.push(next);
         }
         if let Some(piece) = stream.flush(&self.tokenizer)? {
             on_piece(&piece).map_err(Failure::Callback)?;
@@ -252,27 +263,30 @@ struct TextStream {
 impl TextStream {
     fn push(&mut self, tokenizer: &Tokenizer, token: u32) -> Result<Option<String>> {
         self.tokens.push(token);
-        let text = tokenizer
-            .decode(&self.tokens, false)
-            .map_err(|e| anyhow!(e))?;
+        let text = self.decode(tokenizer)?;
         if text.ends_with('\u{FFFD}') {
             return Ok(None);
         }
+        Ok(self.take(&text))
+    }
+
+    fn flush(&mut self, tokenizer: &Tokenizer) -> Result<Option<String>> {
+        let text = self.decode(tokenizer)?;
+        Ok(self.take(&text))
+    }
+
+    fn decode(&self, tokenizer: &Tokenizer) -> Result<String> {
+        tokenizer
+            .decode(&self.tokens, false)
+            .map_err(|e| anyhow!(e))
+    }
+
+    fn take(&mut self, text: &str) -> Option<String> {
         let piece = text
             .get(self.emitted..)
             .filter(|p| !p.is_empty())
             .map(str::to_string);
         self.emitted = self.emitted.max(text.len());
-        Ok(piece)
-    }
-
-    fn flush(&mut self, tokenizer: &Tokenizer) -> Result<Option<String>> {
-        let text = tokenizer
-            .decode(&self.tokens, false)
-            .map_err(|e| anyhow!(e))?;
-        Ok(text
-            .get(self.emitted..)
-            .filter(|p| !p.is_empty())
-            .map(str::to_string))
+        piece
     }
 }

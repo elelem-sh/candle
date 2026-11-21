@@ -7,10 +7,9 @@ mod tokenizer;
 
 use engine::{Engine, Failure, Options};
 use magnus::{block::Proc, function, method, prelude::*, Error, RHash, Ruby};
-use std::cell::RefCell;
 
 #[magnus::wrap(class = "Elelem::Candle::Model", free_immediately, size)]
-struct Model(RefCell<Engine>);
+struct Model(Engine);
 
 fn runtime_error(ruby: &Ruby, e: impl std::fmt::Display) -> Error {
     Error::new(ruby.exception_runtime_error(), format!("candle: {e:#}"))
@@ -36,33 +35,24 @@ fn render_template(
 impl Model {
     fn load(ruby: &Ruby, path: String, context: usize) -> Result<Self, Error> {
         Engine::load(&path, context)
-            .map(|e| Self(RefCell::new(e)))
+            .map(Self)
             .map_err(|e| runtime_error(ruby, e))
     }
 
     fn context(&self) -> usize {
-        self.0.borrow().context
+        self.0.context
     }
 
     fn count(ruby: &Ruby, rb_self: &Self, text: String) -> Result<usize, Error> {
         rb_self
             .0
-            .borrow()
             .encode(&text)
             .map(|t| t.len())
             .map_err(|e| runtime_error(ruby, e))
     }
 
     fn reset(ruby: &Ruby, rb_self: &Self) -> Result<(), Error> {
-        rb_self
-            .0
-            .try_borrow_mut()
-            .map(|mut e| e.reset())
-            .map_err(|_| runtime_error(ruby, "generate is already running on this model"))
-    }
-
-    fn architecture(&self) -> String {
-        self.0.borrow().architecture.clone()
+        rb_self.0.reset().map_err(|e| runtime_error(ruby, e))
     }
 
     fn render(
@@ -72,14 +62,10 @@ impl Model {
         tools: String,
         thinking: bool,
     ) -> Result<String, Error> {
+        let (messages, tools) = (parse_json(ruby, &messages)?, parse_json(ruby, &tools)?);
         rb_self
             .0
-            .borrow()
-            .render(
-                &parse_json(ruby, &messages)?,
-                &parse_json(ruby, &tools)?,
-                thinking,
-            )
+            .render(&messages, &tools, thinking)
             .map_err(|e| runtime_error(ruby, e))
     }
 
@@ -104,11 +90,8 @@ impl Model {
                 .lookup::<_, Option<bool>>(ruby.to_symbol("profile"))?
                 .unwrap_or(false),
         };
-        let mut engine = rb_self
+        let stats = rb_self
             .0
-            .try_borrow_mut()
-            .map_err(|_| runtime_error(ruby, "generate is already running on this model"))?;
-        let stats = engine
             .generate(
                 &prompt,
                 &opts,
@@ -127,8 +110,8 @@ impl Model {
         hash.aset(ruby.to_symbol("n_decoded"), stats.n_decoded)?;
         hash.aset(ruby.to_symbol("ms_prefill"), stats.ms_prefill)?;
         hash.aset(ruby.to_symbol("ms_decode"), stats.ms_decode)?;
-        if let Some([prefill, decode]) = stats.profile {
-            for (name, ms) in [("prefill", prefill), ("decode", decode)] {
+        if let Some(profiles) = stats.profile {
+            for (name, ms) in ["prefill", "decode"].into_iter().zip(profiles) {
                 let sections = ruby.hash_new();
                 for (section, value) in qwen3::SECTIONS.iter().zip(ms) {
                     sections.aset(ruby.to_symbol(section), value)?;
@@ -147,7 +130,6 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     let model = candle.define_class("Model", ruby.class_object())?;
     model.define_singleton_method("load", function!(Model::load, 2))?;
     model.define_method("context", method!(Model::context, 0))?;
-    model.define_method("architecture", method!(Model::architecture, 0))?;
     model.define_method("count", method!(Model::count, 1))?;
     model.define_method("reset", method!(Model::reset, 0))?;
     model.define_method("render", method!(Model::render, 3))?;
