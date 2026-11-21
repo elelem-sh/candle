@@ -4,16 +4,16 @@ module Elelem
   module Candle
     module Native
       NEEDS = %w[avx2 fma f16c].freeze
-      PREBUILT = "#{RUBY_VERSION[/\A\d+\.\d+/]}/candle".freeze
 
       def self.load
-        return require_relative("candle") unless prebuilt?
-
-        check_cpu
-        require_relative PREBUILT
+        check_cpu if prebuilt?
+        require_relative "candle"
       end
 
-      def self.prebuilt? = File.exist?(File.join(__dir__, "#{PREBUILT}.#{RbConfig::CONFIG["DLEXT"]}"))
+      def self.prebuilt?
+        spec = Gem.loaded_specs["elelem-candle"]
+        !spec.nil? && spec.platform.to_s != Gem::Platform::RUBY
+      end
 
       def self.check_cpu(flags = cpu_flags)
         missing = NEEDS - flags
