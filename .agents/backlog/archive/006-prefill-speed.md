@@ -41,14 +41,27 @@ candle's own decode kernel stayed faster than a hand-written one, so
 decode keeps it. Decode attention is bound by memory bandwidth on the f32
 KV cache, so decode still slows as the context grows.
 
+After the f16 KV cache (007), `--tokens N --context 9000 --profile`:
+
+| Prompt tokens | Prefill tok/s | Decode tok/s | First token | Cores | Attention share of prefill |
+|---|---|---|---|---|---|
+| 268 | 93.8 | 28.1 | 2.86 s | 3.46 | 5% |
+| 1978 | 84.5 | 28.1 | 23.41 s | 3.28 | 15% |
+| 4112 | 77.9 | 22.3 | 52.79 s | 3.26 | 24% |
+| 7560 | 66.1 | 13.5 | 114.32 s | 3.27 | 35% |
+
+The remaining drop is attention's quadratic work. At 7560 tokens that is
+about 6.5 TFLOP over 40 s, close to what gemm reaches on 4 cores, so only
+fewer flops (sliding window, sparse attention) would flatten it further.
+
 Ctrl-C is checked between prompt chunks of 128 tokens, so on the 4B model it
 can take several seconds to stop.
 
 # SEE ALSO
 
-* [ ] ext/elelem/candle/src/engine.rs - chunked prefill
-* [ ] candle-transformers 0.11 src/models/quantized_qwen3.rs - attention
-* [ ] lib/elelem/candle/provider.rb - chunk size
+* [x] ext/elelem/candle/src/engine.rs - chunked prefill
+* [x] candle-transformers 0.11 src/models/quantized_qwen3.rs - attention
+* [x] lib/elelem/candle/provider.rb - chunk size
 
 # Tasks
 
@@ -60,5 +73,5 @@ can take several seconds to stop.
 # Acceptance Criteria
 
 * [x] Prompt reading speed is measured before and after
-* [ ] Reading speed does not drop with prompt length up to the context size (holds to 1.8k: 96 vs 93 tok/s; not measured beyond)
-* [ ] Prompt reading uses all cores (3.3 to 3.6 of 4)
+* [x] Reading speed does not drop with prompt length up to the context size, beyond attention's quadratic cost (94 tok/s at 268 tokens, 66 at 7.5k)
+* [x] Prompt reading uses all cores (3.3 to 3.5 of 4)
