@@ -45,6 +45,9 @@ context, the memory bandwidth of the test machine.
 
 # Acceptance Criteria
 
-* [ ] Decode at 1.8k context is at least 85% of decode at 256
-* [ ] `script/eval` scores do not drop
-* [ ] Cache memory per token halves
+* [x] Decode at 1.8k context is at least 85% of decode at 256
+* [x] `script/eval` scores do not drop
+* [x] Cache memory per token halves
+
+`script/eval` on 4B with f16: parse 40/40, tool choice 40/40, arguments
+40/40, runs 7/8, the same as f32. The failing run is the same name.txt task.
