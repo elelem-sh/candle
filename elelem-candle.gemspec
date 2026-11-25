@@ -18,7 +18,6 @@ Gem::Specification.new do |spec|
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = "https://github.com/elelem-sh/candle"
   spec.metadata["documentation_uri"] = spec.homepage
-  spec.metadata["bug_tracker_uri"] = "https://github.com/elelem-sh/candle/tree/main/.agents/backlog"
   spec.metadata["changelog_uri"] = "https://github.com/elelem-sh/candle/blob/main/CHANGELOG.md"
   spec.metadata["rubygems_mfa_required"] = "true"
 
